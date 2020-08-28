@@ -2,6 +2,7 @@ module Pod
   class Command
     class Outdated < Command
       include RepoUpdate
+      include PodfileEnvironment
       include ProjectDirectory
 
       self.summary = 'Show outdated project dependencies'

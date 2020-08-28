@@ -2,6 +2,7 @@ module Pod
   class Command
     class Install < Command
       include RepoUpdate
+      include PodfileEnvironment
       include ProjectDirectory
 
       self.summary = 'Install project dependencies according to versions from a Podfile.lock'

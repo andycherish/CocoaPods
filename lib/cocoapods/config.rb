@@ -225,6 +225,7 @@ module Pod
     def podfile_path
       @podfile_path ||= podfile_path_in_dir(installation_root)
     end
+    attr_writer :podfile_path
 
     # Returns the path of the Lockfile.
     #

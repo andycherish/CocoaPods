@@ -2,6 +2,7 @@ module Pod
   class Command
     class Update < Command
       include RepoUpdate
+      include PodfileEnvironment
       include ProjectDirectory
 
       self.summary = 'Update outdated project dependencies and create new ' \

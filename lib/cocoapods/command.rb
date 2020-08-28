@@ -15,6 +15,7 @@ module Pod
 
   class Command < CLAide::Command
     require 'cocoapods/command/options/repo_update'
+    require 'cocoapods/command/options/podfile_environment'
     require 'cocoapods/command/options/project_directory'
     include Options
 
