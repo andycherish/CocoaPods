@@ -7,7 +7,7 @@ module Pod
         module Options
           def options
             [
-              ['--podfile_environment=env', 'The env of podfile'],
+              ['--podfile-environment=env', 'The environment name of podfile'],
             ].concat(super)
           end
         end
@@ -17,22 +17,19 @@ module Pod
         end
 
         def initialize(argv)
-          if podfile_environment = argv.option('podfile_environment')
+          if podfile_environment = argv.option('podfile-environment')
             @podfile_environment = podfile_environment
-          end
-          if config.podfile_path
-            config.podfile_path = config.podfile_path.sub_ext('.' + @podfile_environment + '.rb')
-          else 
-            config.podfile_path = (config.installation_root + 'Podfile').sub_ext('.' + @podfile_environment + '.rb')
+            if config.podfile_path
+              config.podfile_path = config.podfile_path.sub_ext('.' + @podfile_environment + '.rb')
+            else 
+              config.podfile_path = (config.installation_root + 'Podfile').sub_ext('.' + @podfile_environment + '.rb')
+            end
           end
           super
         end
 
         def validate!
           super
-          if @project_directory && !@project_directory.directory?
-            raise Informative, "`#{@project_directory}` is not a valid directory."
-          end
         end
       end
     end
