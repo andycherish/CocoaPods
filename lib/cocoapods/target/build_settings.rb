@@ -346,18 +346,26 @@ module Pod
       #
       # @param [Boolean] test_bundle
       #
-      def _ld_runpath_search_paths(requires_host_target: false, test_bundle: false)
-        if target.platform.symbolic_name == :osx
-          ["'@executable_path/../Frameworks'",
-           test_bundle ? "'@loader_path/../Frameworks'" : "'@loader_path/Frameworks'"]
-        else
-          paths = [
-            "'@executable_path/Frameworks'",
-            "'@loader_path/Frameworks'",
-          ]
-          paths << "'@executable_path/../../Frameworks'" if requires_host_target
-          paths
+      def _ld_runpath_search_paths(requires_host_target: false, test_bundle: false, uses_swift: false)
+        paths = []
+        if uses_swift
+          paths << '/usr/lib/swift'
+          paths << '$(PLATFORM_DIR)/Developer/Library/Frameworks' if test_bundle
         end
+        if target.platform.symbolic_name == :osx
+          paths << "'@executable_path/../Frameworks'"
+          paths << if test_bundle
+                     "'@loader_path/../Frameworks'"
+                   else
+                     "'@loader_path/Frameworks'"
+                   end
+          paths << '${DT_TOOLCHAIN_DIR}/usr/lib/swift/${PLATFORM_NAME}' if uses_swift
+        else
+          paths << "'@executable_path/Frameworks'"
+          paths << "'@loader_path/Frameworks'"
+          paths << "'@executable_path/../../Frameworks'" if requires_host_target
+        end
+        paths
       end
       private :_ld_runpath_search_paths
 
@@ -616,9 +624,15 @@ module Pod
                 select { |xcf| xcf.build_type.static_framework? }.
                 map(&:name).
                 uniq
+
+              # Include direct dynamic dependencies to the linker flags. We used to add those in the 'Link Binary With Libraries'
+              # phase but we no longer do since we cannot differentiate between debug or release configurations within
+              # that phase.
+              frameworks.concat target.dependent_targets_by_config[@configuration].flat_map { |pt| pt.build_settings[@configuration].dynamic_frameworks_to_import }
+            else
+              # Also include any vendored dynamic frameworks of dependencies.
+              frameworks.concat dependent_targets.reject(&:should_build?).flat_map { |pt| pt.build_settings[@configuration].dynamic_frameworks_to_import }
             end
-            # Also include any vendored dynamic frameworks of dependencies.
-            frameworks.concat dependent_targets.reject(&:should_build?).flat_map { |pt| pt.build_settings[@configuration].dynamic_frameworks_to_import }
           else
             frameworks.concat dependent_targets_to_link.flat_map { |pt| pt.build_settings[@configuration].frameworks_to_import }
           end
@@ -755,7 +769,7 @@ module Pod
             libraries.concat libraries_to_import
             xcframework_libraries = vendored_xcframeworks.
                                     select { |xcf| xcf.build_type.static_library? }.
-                                    map(&:name).
+                                    flat_map { |xcf| linker_names_from_libraries([xcf.slices.first.binary_path]) }.
                                     uniq
             libraries.concat xcframework_libraries
           end
@@ -840,10 +854,15 @@ module Pod
 
         # @return [Array<String>]
         define_build_settings_method :library_search_paths_to_import, :memoized => true do
-          vendored_library_search_paths = vendored_static_library_search_paths + vendored_dynamic_library_search_paths
-          return vendored_library_search_paths if target.build_as_framework? || !target.should_build?
+          search_paths = vendored_static_library_search_paths + vendored_dynamic_library_search_paths
+          if target.uses_swift? || other_swift_flags_without_swift?
+            search_paths << '/usr/lib/swift'
+            search_paths << '${DT_TOOLCHAIN_DIR}/usr/lib/swift/${PLATFORM_NAME}'
+            search_paths << '$(PLATFORM_DIR)/Developer/Library/Frameworks' if test_xcconfig?
+          end
+          return search_paths if target.build_as_framework? || !target.should_build?
 
-          vendored_library_search_paths << target.configuration_build_dir(CONFIGURATION_BUILD_DIR_VARIABLE)
+          search_paths << target.configuration_build_dir(CONFIGURATION_BUILD_DIR_VARIABLE)
         end
 
         #-------------------------------------------------------------------------#
@@ -871,7 +890,16 @@ module Pod
 
         # @return [Array<String>]
         define_build_settings_method :header_search_paths, :build_setting => true, :memoized => true, :sorted => true do
-          target.header_search_paths(:include_dependent_targets_for_test_spec => test_xcconfig? && non_library_spec, :include_dependent_targets_for_app_spec => app_xcconfig? && non_library_spec, :configuration => @configuration)
+          paths = target.header_search_paths(:include_dependent_targets_for_test_spec => test_xcconfig? && non_library_spec, :include_dependent_targets_for_app_spec => app_xcconfig? && non_library_spec, :configuration => @configuration)
+
+          dependent_vendored_xcframeworks = []
+          dependent_vendored_xcframeworks.concat vendored_xcframeworks
+          dependent_vendored_xcframeworks.concat dependent_targets.flat_map { |pt| pt.build_settings[@configuration].vendored_xcframeworks }
+          paths.concat dependent_vendored_xcframeworks.
+            select { |xcf| xcf.build_type.static_library? }.
+            map { |xcf| "#{BuildSettings.xcframework_intermediate_dir(xcf)}/Headers" }.
+            compact
+          paths
         end
 
         # @return [Array<String>]
@@ -939,7 +967,8 @@ module Pod
         # @return [Array<String>]
         define_build_settings_method :ld_runpath_search_paths, :build_setting => true, :memoized => true do
           return if library_xcconfig?
-          _ld_runpath_search_paths(:test_bundle => test_xcconfig?)
+          _ld_runpath_search_paths(:test_bundle => test_xcconfig?,
+                                   :uses_swift => other_swift_flags_without_swift? || dependent_targets.any?(&:uses_swift?))
         end
 
         #-------------------------------------------------------------------------#
@@ -1242,7 +1271,8 @@ module Pod
           return unless pod_targets.any?(&:build_as_dynamic?) || any_vendored_dynamic_artifacts?
           symbol_type = target.user_targets.map(&:symbol_type).uniq.first
           test_bundle = symbol_type == :octest_bundle || symbol_type == :unit_test_bundle || symbol_type == :ui_test_bundle
-          _ld_runpath_search_paths(:requires_host_target => target.requires_host_target?, :test_bundle => test_bundle)
+          _ld_runpath_search_paths(:requires_host_target => target.requires_host_target?, :test_bundle => test_bundle,
+                                   :uses_swift => pod_targets.any?(&:uses_swift?))
         end
 
         # @return [Boolean]

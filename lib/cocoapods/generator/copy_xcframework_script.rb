@@ -100,12 +100,21 @@ select_slice() {
         break
       fi
 
+      # Verifies that the path contains the variant string (simulator or maccatalyst) if the variant is set.
+      if [[ -z "$target_variant" && ("${paths[$i]}" == *"simulator"* || "${paths[$i]}" == *"maccatalyst"*) ]]; then
+        matched_all_archs="0"
+        break
+      fi
+
       # This regex matches all possible variants of the arch in the folder name:
       # Let's say the folder name is: ios-armv7_armv7s_arm64_arm64e/CoconutLib.framework
       # We match the following: -armv7_, _armv7s_, _arm64_ and _arm64e/.
       # If we have a specific variant: ios-i386_x86_64-simulator/CoconutLib.framework
       # We match the following: -i386_ and _x86_64-
-      local target_arch_regex="[_\\-]${target_arch}[\\/_\\-]"
+      # When the .xcframework wraps a static library, the folder name does not include
+      # any .framework. In that case, the folder name can be: ios-arm64_armv7
+      # We also match _armv7$ to handle that case.
+      local target_arch_regex="[_\\-]${target_arch}([\\/_\\-]|$)"
       if ! [[ "${paths[$i]}" =~ $target_arch_regex ]]; then
         matched_all_archs="0"
         break
@@ -185,12 +194,8 @@ install_xcframework() {
     mkdir -p "$destination"
   fi
 
-  if [[ "$package_type" == "library" ]]; then
-    # Libraries can contain headers, module maps, and a binary, so we'll copy everything in the folder over
-    copy_dir "$source/" "$destination"
-  elif [[ "$package_type" == "framework" ]]; then
-    copy_dir "$source" "$destination"
-  fi
+  copy_dir "$source/" "$destination"
+
   echo "Copied $source to $destination"
 }
 
@@ -217,12 +222,7 @@ install_xcframework() {
         is_framework = xcframework.build_type.framework?
         args << shell_escape(is_framework ? 'framework' : 'library')
         slices.each do |slice|
-          args << if is_framework
-                    shell_escape(slice.path.relative_path_from(root))
-                  else
-                    # We don't want the path to the library binary, we want the dir that contains it
-                    shell_escape(slice.path.dirname.relative_path_from(root))
-                  end
+          args << shell_escape(slice.path.dirname.relative_path_from(root))
         end
         args.join(' ')
       end

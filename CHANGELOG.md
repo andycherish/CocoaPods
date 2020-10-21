@@ -8,9 +8,23 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
 
 ##### Enhancements
 
-* None.  
+* Installing a local (`:path`) pod that defines script phases will no longer
+  produce warnings.  
+  [Samuel Giddins](https://github.com/segiddins)
+
+* Allow building app & test spec targets that depend on a library that uses
+  Swift without requiring an empty Swift file be present.  
+  [Samuel Giddins](https://github.com/segiddins)
+
+* Add flag to ignore prerelease versions when reporting latest version for outdated pods.  
+  [cltnschlosser](https://github.com/cltnschlosser)
+  [#9916](https://github.com/CocoaPods/CocoaPods/pull/9916)
 
 ##### Bug Fixes
+
+* Do not add dependencies to 'Link Binary With Libraries' phase.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10133](https://github.com/CocoaPods/CocoaPods/pull/10133)
 
 * Ensure cache integrity on concurrent installations.  
   [Erik Blomqvist](https://github.com/codiophile)
@@ -19,6 +33,40 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
 * Force a clean install if installation options change.  
   [Sebastian Shanus](https://github.com/sebastianv1)
   [#10016](https://github.com/CocoaPods/CocoaPods/pull/10016)
+
+* Correctly detect that a prebuilt pod uses Swift.  
+  [Elton Gao](https://github.com/gyfelton)
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#8649](https://github.com/CocoaPods/CocoaPods/issues/8649)
+
+
+## 1.10.0 (2020-10-20)
+
+##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
+* Generate the correct LD `-l` flags for XCFrameworks containing libraries  
+  [Wes Campaigne](https://github.com/Westacular)
+  [#10071](https://github.com/CocoaPods/CocoaPods/issues/10071)
+
+* Add support for automatically embeddeding XCFramework debug symbols for XCFrameworks generated with Xcode 12  
+  [johntmcintosh](https://github.com/johntmcintosh)
+  [#10111](https://github.com/CocoaPods/CocoaPods/issues/10111)
+
+## 1.10.0.rc.1 (2020-09-15)
+
+##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
+* Fix XCFramework slice selection  
+  [lowip](https://github.com/lowip)
+  [#10026](https://github.com/CocoaPods/CocoaPods/issues/10026)
 
 * Honor test spec deployment target during validation.  
   [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
