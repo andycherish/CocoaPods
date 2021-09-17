@@ -36,8 +36,9 @@ module Pod
 
     # @return [Pathname]
     #
-    def podspec_path(name = 'JSONKit', version = '1.4')
-      Config.instance.sources_manager.master.first.specification_path(name, version)
+    def podspec_path(name = 'JSONKit', version = '1.4', source = nil)
+      source = Config.instance.sources_manager.master.first if source.nil?
+      source.specification_path(name, version)
     end
 
     #-------------------------------------------------------------------------#
@@ -91,7 +92,8 @@ module Pod
 
       describe '#only_subspec' do
         before do
-          podspec = podspec_path('RestKit', '0.22.0')
+          test_repo_source = Config.instance.sources_manager.source_with_name_or_url('test_repo')
+          podspec = podspec_path('RestKit', '0.22.0', test_repo_source)
           @validator = Validator.new(podspec, config.sources_manager.master.map(&:url))
           @validator.quick = true
         end
@@ -106,6 +108,18 @@ module Pod
           @validator.only_subspec = 'RestKit/CoreData'
           @validator.validate
           @validator.send(:subspec_name).should == 'RestKit/CoreData'
+        end
+
+        it 'handles a relative subspec name which starts with the pod name' do
+          @validator.only_subspec = 'RestKitSubspec'
+          @validator.validate
+          @validator.send(:subspec_name).should == 'RestKit/RestKitSubspec'
+        end
+
+        it 'handles an absolute subspec name which starts with the pod name' do
+          @validator.only_subspec = 'RestKit/RestKitSubspec'
+          @validator.validate
+          @validator.send(:subspec_name).should == 'RestKit/RestKitSubspec'
         end
 
         it 'handles a missing subspec name' do
@@ -983,7 +997,9 @@ module Pod
           target.symbol_type.should == :application
           target.deployment_target.should.be.nil
           target.platform_name.should == :ios
-
+          target.build_configurations.each do |c|
+            c.build_settings['INFOPLIST_FILE'].should == '$(SRCROOT)/App/App-Info.plist'
+          end
           Xcodeproj::Project.schemes(project.path).should == %w(App)
         end
 
@@ -1125,6 +1141,16 @@ module Pod
           validator.stubs(:validate_url)
           validator.validate
           validator.results.map(&:to_s).first.should.match /The `public_header_files` pattern did not match any file./
+          validator.result_type.should == :warning
+        end
+
+        it 'warns if project_header_files does not match any files' do
+          file = write_podspec(stub_podspec(/.*source_files.*/, '"source_files": "JSONKit.*", "project_header_files": "MissingHeader.h",'))
+          validator = Validator.new(file, config.sources_manager.master.map(&:url))
+          validator.stubs(:build_pod)
+          validator.stubs(:validate_url)
+          validator.validate
+          validator.results.map(&:to_s).first.should.match /The `project_header_files` pattern did not match any file./
           validator.result_type.should == :warning
         end
 
@@ -1297,8 +1323,25 @@ module Pod
         validator.stubs(:validate_url)
         validator.validate
 
-        validator.results.map(&:to_s).first.should.match /Dynamic frameworks.*iOS 8.0 and onwards/
+        validator.results.count.should == 2
+        validator.results.map(&:to_s)[0].should.match /`empty\.dylib` does not match the expected static library name format/
+        validator.results.map(&:to_s)[1].should.match /Dynamic frameworks.*iOS 8.0 and onwards/
         validator.result_type.should == :error
+      end
+
+      it 'uses the expanded paths of the vendored libraries to validate them' do
+        podspec = stub_podspec(/.*source_files.*/, "  \"source_files\": \"JSONKit.*\",\n  \"vendored_libraries\": \"**/*.a\",")
+        file = write_podspec(podspec)
+
+        Pod::Sandbox::FileAccessor.any_instance.stubs(:vendored_libraries).returns([fixture('monkey/monkey.a'), fixture('banana-lib/libBananaStaticLib.a')])
+        validator = Validator.new(file, config.sources_manager.master.map(&:url))
+        validator.stubs(:build_pod)
+        validator.stubs(:validate_url)
+        validator.validate
+
+        validator.results.count.should == 1
+        validator.results.map(&:to_s).first.should.match /`monkey\.a` does not match the expected static library name format/
+        validator.result_type.should == :warning
       end
     end
 
@@ -1749,7 +1792,7 @@ module Pod
         project.native_targets.find { |t| t.name == 'App' }
       end
 
-      describe 'check appicon key deleted' do
+      describe 'sets various configuration settings' do
         before do
           @validator = Validator.new(podspec_path, config.sources_manager.master.map(&:url))
           @validator.stubs(:validate_url)
@@ -1759,39 +1802,79 @@ module Pod
           @validator.send(:tear_down_validation_environment)
         end
 
-        it 'ios platform deletes AppIcon key' do
-          consumer = Specification.from_file(podspec_path).consumer(:ios)
-          target = create_target_with_validator_consumer(@validator, consumer)
+        describe 'sets the product bundle identifier' do
+          it 'ios platform sets product bundle identifier' do
+            consumer = Specification.from_file(podspec_path).consumer(:ios)
+            target = create_target_with_validator_consumer(@validator, consumer)
 
-          target.build_configurations.each do |config|
-            config.build_settings.key?('ASSETCATALOG_COMPILER_APPICON_NAME').should.be.false
+            target.build_configurations.each do |config|
+              config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'].should == 'org.cocoapods.${PRODUCT_NAME:rfc1034identifier}'
+            end
+          end
+
+          it 'tvos platform deletes AppIcon key' do
+            consumer = Specification.from_file(podspec_path).consumer(:tvos)
+            target = create_target_with_validator_consumer(@validator, consumer)
+
+            target.build_configurations.each do |config|
+              config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'].should == 'org.cocoapods.${PRODUCT_NAME:rfc1034identifier}'
+            end
+          end
+
+          it 'osx platform deletes AppIcon key' do
+            consumer = Specification.from_file(podspec_path).consumer(:osx)
+            target = create_target_with_validator_consumer(@validator, consumer)
+
+            target.build_configurations.each do |config|
+              config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'].should == 'org.cocoapods.${PRODUCT_NAME:rfc1034identifier}'
+            end
+          end
+
+          it 'watchos platform deletes AppIcon key' do
+            consumer = Specification.from_file(podspec_path).consumer(:watchos)
+            target = create_target_with_validator_consumer(@validator, consumer)
+
+            target.build_configurations.each do |config|
+              config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'].should == 'org.cocoapods.${PRODUCT_NAME:rfc1034identifier}'
+            end
           end
         end
 
-        it 'tvos platform deletes AppIcon key' do
-          consumer = Specification.from_file(podspec_path).consumer(:tvos)
-          target = create_target_with_validator_consumer(@validator, consumer)
+        describe 'check appicon key deleted' do
+          it 'ios platform deletes AppIcon key' do
+            consumer = Specification.from_file(podspec_path).consumer(:ios)
+            target = create_target_with_validator_consumer(@validator, consumer)
 
-          target.build_configurations.each do |config|
-            config.build_settings.key?('ASSETCATALOG_COMPILER_APPICON_NAME').should.be.false
+            target.build_configurations.each do |config|
+              config.build_settings.key?('ASSETCATALOG_COMPILER_APPICON_NAME').should.be.false
+            end
           end
-        end
 
-        it 'osx platform deletes AppIcon key' do
-          consumer = Specification.from_file(podspec_path).consumer(:osx)
-          target = create_target_with_validator_consumer(@validator, consumer)
+          it 'tvos platform deletes AppIcon key' do
+            consumer = Specification.from_file(podspec_path).consumer(:tvos)
+            target = create_target_with_validator_consumer(@validator, consumer)
 
-          target.build_configurations.each do |config|
-            config.build_settings.key?('ASSETCATALOG_COMPILER_APPICON_NAME').should.be.false
+            target.build_configurations.each do |config|
+              config.build_settings.key?('ASSETCATALOG_COMPILER_APPICON_NAME').should.be.false
+            end
           end
-        end
 
-        it 'watchos platform deletes AppIcon key' do
-          consumer = Specification.from_file(podspec_path).consumer(:watchos)
-          target = create_target_with_validator_consumer(@validator, consumer)
+          it 'osx platform deletes AppIcon key' do
+            consumer = Specification.from_file(podspec_path).consumer(:osx)
+            target = create_target_with_validator_consumer(@validator, consumer)
 
-          target.build_configurations.each do |config|
-            config.build_settings.key?('ASSETCATALOG_COMPILER_APPICON_NAME').should.be.false
+            target.build_configurations.each do |config|
+              config.build_settings.key?('ASSETCATALOG_COMPILER_APPICON_NAME').should.be.false
+            end
+          end
+
+          it 'watchos platform deletes AppIcon key' do
+            consumer = Specification.from_file(podspec_path).consumer(:watchos)
+            target = create_target_with_validator_consumer(@validator, consumer)
+
+            target.build_configurations.each do |config|
+              config.build_settings.key?('ASSETCATALOG_COMPILER_APPICON_NAME').should.be.false
+            end
           end
         end
       end

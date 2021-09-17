@@ -49,7 +49,7 @@ module Pod
 
       it 'returns whether it has xcframeworks to embed' do
         @target.stubs(:xcframeworks_by_config).returns(
-          'DEBUG' => [Xcode::XCFramework.new(fixture('CoconutLib.xcframework'))],
+          'DEBUG' => [Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework'))],
         )
         @target.includes_xcframeworks?.should.be.true
         @target.stubs(:xcframeworks_by_config).returns('DEBUG' => [], 'RELEASE' => [])
@@ -146,7 +146,7 @@ module Pod
         end
       end
 
-      describe 'frameworks by config and input output paths' do
+      describe 'pod target paths' do
         before do
           @coconut_spec = fixture_spec('coconut-lib/CoconutLib.podspec')
           file_accessor = fixture_file_accessor(@coconut_spec, Platform.ios)
@@ -187,7 +187,7 @@ module Pod
           resource_paths_by_config['Release'].should == ['MyResources.bundle']
         end
 
-        it 'checks resource paths for compilable are converted for static frameworks' do
+        it 'checks resource paths for compilable files are converted for static frameworks' do
           @pod_target.stubs(:should_build?).returns(true)
           @pod_target.stubs(:build_type => BuildType.static_framework)
           convertible_files = %w[.storyboard .xib .xcdatamodel .xcdatamodeld .xcmappingmodel].map { |ext| "${PODS_ROOT}/Filename#{ext}" }
@@ -199,7 +199,7 @@ module Pod
           resource_paths_by_config['Release'].should == expected_files
         end
 
-        it 'checks resource paths for compilable are converted for static frameworks with multiple file extensions' do
+        it 'checks resource paths for compilable files are converted for static frameworks with multiple file extensions' do
           @pod_target.stubs(:should_build?).returns(true)
           @pod_target.stubs(:build_type => BuildType.static_framework)
           convertible_files = %w[.storyboard .xib .xcdatamodel .xcdatamodeld .xcmappingmodel].map { |ext| "${PODS_ROOT}/Filename.Suffix#{ext}" }
@@ -207,6 +207,18 @@ module Pod
           @target.stubs(:bridge_support_file).returns(nil)
           resource_paths_by_config = @target.resource_paths_by_config
           expected_files = %w[.storyboardc .nib .mom .momd .cdm].map { |ext| "${BUILT_PRODUCTS_DIR}/BananaLib/BananaLib.framework/Filename.Suffix#{ext}" }
+          resource_paths_by_config['Debug'].should == expected_files
+          resource_paths_by_config['Release'].should == expected_files
+        end
+
+        it 'checks resource paths for compilable files are converted for static frameworks when base-localized' do
+          @pod_target.stubs(:should_build?).returns(true)
+          @pod_target.stubs(:build_type => BuildType.static_framework)
+          convertible_files = %w[${PODS_ROOT}/some/folder/Base.lproj/Main.storyboard ${PODS_ROOT}/some/folder/en.lproj/Main.strings]
+          @pod_target.stubs(:resource_paths).returns('BananaLib' => convertible_files)
+          @target.stubs(:bridge_support_file).returns(nil)
+          resource_paths_by_config = @target.resource_paths_by_config
+          expected_files = %w[${BUILT_PRODUCTS_DIR}/BananaLib/BananaLib.framework/Base.lproj/Main.storyboardc ${PODS_ROOT}/some/folder/en.lproj/Main.strings]
           resource_paths_by_config['Debug'].should == expected_files
           resource_paths_by_config['Release'].should == expected_files
         end
@@ -272,6 +284,15 @@ module Pod
           framework_path = fixture('CoconutLib.xcframework')
           @pod_target.file_accessors.first.stubs(:vendored_xcframeworks).returns([framework_path])
           @target.xcframeworks_by_config['Debug'].map(&:path).should == [framework_path]
+        end
+
+        it 'returns on demand resources paths' do
+          @target.stubs(:pod_targets).returns([@pod_target, @pod_target_release])
+          on_demand_resources = { 'tag1' => { :paths => ['./banana-lib/path/to/resource'], :category => :download_on_demand } }
+          @pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+          release_on_demand_resources = { 'othertag1' => { :paths => ['./coconutlib/path/to/other/resource'], :category => :download_on_demand } }
+          @pod_target_release.file_accessors.first.stubs(:on_demand_resources).returns(release_on_demand_resources)
+          @target.on_demand_resources.should == ['./banana-lib/path/to/resource', './coconutlib/path/to/other/resource']
         end
       end
 

@@ -203,7 +203,7 @@ module Pod
       end
     end
 
-    # @return [Array<String>] The list of all files tracked.
+    # @return [Array<Pathname>] The list of all files tracked.
     #
     def all_files
       Sandbox::FileAccessor.all_files(file_accessors)
@@ -311,7 +311,7 @@ module Pod
       test_specs.map { |test_spec| test_spec.consumer(platform) }
     end
 
-    # @return [Array<Specification::Consumer>] the test specification consumers for
+    # @return [Array<Specification::Consumer>] the app specification consumers for
     #         the target.
     #
     def app_spec_consumers
@@ -394,7 +394,7 @@ module Pod
       !test_specs.empty?
     end
 
-    # @return [Boolean] Whether the target has any tests specifications.
+    # @return [Boolean] Whether the target has any app specifications.
     #
     def contains_app_specifications?
       !app_specs.empty?
@@ -443,7 +443,7 @@ module Pod
       @xcframeworks ||= begin
         file_accessors.each_with_object({}) do |file_accessor, hash|
           frameworks = file_accessor.vendored_xcframeworks.map do |framework_path|
-            Xcode::XCFramework.new(framework_path)
+            Xcode::XCFramework.new(file_accessor.spec.name, framework_path)
           end
           hash[file_accessor.spec.name] = frameworks
         end

@@ -144,7 +144,7 @@ module Pod
                 resource_paths = ['${PODS_CONFIGURATION_BUILD_DIR}/TestResourceBundle.bundle']
                 @watermelon_pod_target.stubs(:framework_paths).returns('WatermelonLib' => framework_paths)
                 @watermelon_pod_target.stubs(:resource_paths).returns('WatermelonLib' => resource_paths)
-                @watermelon_pod_target.stubs(:xcframeworks).returns('WatermelonLib' => [Pod::Xcode::XCFramework.new(fixture('CoconutLib.xcframework'))])
+                @watermelon_pod_target.stubs(:xcframeworks).returns('WatermelonLib' => [Pod::Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework'))])
                 test_native_target = stub('TestNativeTarget', :symbol_type => :unit_test_bundle, :build_phases => [],
                                                               :shell_script_build_phases => [], :project => @project,
                                                               :name => 'WatermelonLib-Unit-Tests')
@@ -176,7 +176,7 @@ module Pod
                 resource_paths = ['${PODS_CONFIGURATION_BUILD_DIR}/TestResourceBundle.bundle']
                 @watermelon_pod_target.stubs(:framework_paths).returns('WatermelonLib' => framework_paths)
                 @watermelon_pod_target.stubs(:resource_paths).returns('WatermelonLib' => resource_paths)
-                @watermelon_pod_target.stubs(:xcframeworks).returns('WatermelonLib' => [Pod::Xcode::XCFramework.new(fixture('CoconutLib.xcframework'))])
+                @watermelon_pod_target.stubs(:xcframeworks).returns('WatermelonLib' => [Pod::Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework'))])
                 test_native_target = stub('TestNativeTarget', :symbol_type => :unit_test_bundle, :build_phases => [],
                                                               :shell_script_build_phases => [], :project => @project,
                                                               :name => 'WatermelonLib-Unit-Tests')
@@ -198,6 +198,28 @@ module Pod
                 ]
                 test_native_target.build_phases[1].output_file_list_paths.should == [
                   '${PODS_ROOT}/Target Support Files/WatermelonLib/WatermelonLib-Unit-Tests-resources-output-files.xcfilelist',
+                ]
+              end
+
+              it 'integrates xcframeworks with input and output file lists even when frameworks are empty' do
+                @project.root_object.stubs(:compatibility_version).returns('Xcode 9.3')
+                @watermelon_pod_target.stubs(:framework_paths).returns({})
+                @watermelon_pod_target.stubs(:resource_paths).returns({})
+                @watermelon_pod_target.stubs(:xcframeworks).returns('WatermelonLib' => [Pod::Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework'))])
+                test_native_target = stub('TestNativeTarget', :symbol_type => :unit_test_bundle, :build_phases => [],
+                                                              :shell_script_build_phases => [], :project => @project,
+                                                              :name => 'WatermelonLib-Unit-Tests')
+                installation_result = TargetInstallationResult.new(@watermelon_pod_target, @native_target,
+                                                                   [], [test_native_target])
+                PodTargetIntegrator.new(installation_result, :use_input_output_paths => true).integrate!
+                test_native_target.build_phases.map(&:display_name).should == [
+                  '[CP] Embed Pods Frameworks',
+                ]
+                test_native_target.build_phases[0].input_file_list_paths.should == [
+                  '${PODS_ROOT}/Target Support Files/WatermelonLib/WatermelonLib-Unit-Tests-frameworks-input-files.xcfilelist',
+                ]
+                test_native_target.build_phases[0].output_file_list_paths.should == [
+                  '${PODS_ROOT}/Target Support Files/WatermelonLib/WatermelonLib-Unit-Tests-frameworks-output-files.xcfilelist',
                 ]
               end
 

@@ -32,7 +32,8 @@ module Pod
         # For messages extensions, this only applies if it's embedded in a messages
         # application.
         #
-        EMBED_FRAMEWORK_TARGET_TYPES = [:application, :application_on_demand_install_capable, :unit_test_bundle, :ui_test_bundle, :watch2_extension, :messages_application].freeze
+        EMBED_FRAMEWORK_TARGET_TYPES = [:application, :application_on_demand_install_capable, :unit_test_bundle,
+                                        :ui_test_bundle, :watch2_extension, :messages_application].freeze
 
         # @return [String] the name of the embed frameworks phase
         #
@@ -326,11 +327,18 @@ module Pod
 
           def reorder_script_phase(native_target, script_phase, execution_position)
             return if execution_position == :any || execution_position.to_s.empty?
-            target_phase_type = Xcodeproj::Project::Object::PBXSourcesBuildPhase
+            target_phase_type = case execution_position
+                                when :before_compile, :after_compile
+                                  Xcodeproj::Project::Object::PBXSourcesBuildPhase
+                                when :before_headers, :after_headers
+                                  Xcodeproj::Project::Object::PBXHeadersBuildPhase
+                                else
+                                  raise ArgumentError, "Unknown execution position `#{execution_position}`"
+                                end
             order_before = case execution_position
-                           when :before_compile
+                           when :before_compile, :before_headers
                              true
-                           when :after_compile
+                           when :after_compile, :after_headers
                              false
                            else
                              raise ArgumentError, "Unknown execution position `#{execution_position}`"
@@ -387,10 +395,10 @@ module Pod
 
           # Returns the framework input paths for the given framework paths
           #
-          # @param  [Hash<Array<Xcode::FrameworkPaths>>] framework_paths
+          # @param  [Array<Xcode::FrameworkPaths>] framework_paths
           #         The target's framework paths to map to input paths.
           #
-          # @param  [Hash<Array<XCFramework>>] xcframeworks
+          # @param  [Array<XCFramework>] xcframeworks
           #         The target's xcframeworks to map to input paths.
           #
           # @return [Array<String>] The embed frameworks script input paths
@@ -426,6 +434,119 @@ module Pod
             end
             paths + xcframework_paths
           end
+
+          # Updates a projects native targets to include on demand resources specified by the supplied parameters.
+          # Note that currently, only app level targets are allowed to include on demand resources.
+          #
+          # @param  [Sandbox] sandbox
+          #         The sandbox to use for calculating ODR file references.
+          #
+          # @param  [Xcodeproj::Project] project
+          #         The project to update known asset tags as well as add the ODR group.
+          #
+          # @param  [Xcodeproj::PBXNativeTarget, Array<Xcodeproj::PBXNativeTarget>] native_targets
+          #         The native targets to integrate on demand resources into.
+          #
+          # @param  [Sandbox::FileAccessor, Array<Sandbox::FileAccessor>] file_accessors
+          #         The file accessors that that provide the ODRs to integrate.
+          #
+          # @param  [Xcodeproj::PBXGroup] parent_odr_group
+          #         The group to use as the parent to add ODR file references into.
+          #
+          # @param  [String] target_odr_group_name
+          #         The name to use for the group created that contains the ODR file references.
+          #
+          # @return [void]
+          #
+          def update_on_demand_resources(sandbox, project, native_targets, file_accessors, parent_odr_group,
+                                         target_odr_group_name)
+            category_to_tags = {}
+            file_accessors = Array(file_accessors)
+            native_targets = Array(native_targets)
+
+            # Target no longer provides ODR references so remove everything related to this target.
+            if file_accessors.all? { |fa| fa.on_demand_resources.empty? }
+              old_target_odr_group = parent_odr_group[target_odr_group_name]
+              old_odr_file_refs = old_target_odr_group&.recursive_children_groups&.each_with_object({}) do |group, hash|
+                hash[group.name] = group.files
+              end || {}
+              native_targets.each do |native_target|
+                native_target.remove_on_demand_resources(old_odr_file_refs)
+                update_on_demand_resources_build_settings(native_target, nil => old_odr_file_refs.keys)
+              end
+              old_target_odr_group&.remove_from_project
+              return
+            end
+
+            target_odr_group = parent_odr_group[target_odr_group_name] || parent_odr_group.new_group(target_odr_group_name)
+            current_file_refs = target_odr_group.recursive_children_groups.flat_map(&:files)
+
+            added_file_refs = file_accessors.flat_map do |file_accessor|
+              target_odr_files_refs = Hash[file_accessor.on_demand_resources.map do |tag, value|
+                tag_group = target_odr_group[tag] || target_odr_group.new_group(tag)
+                category_to_tags[value[:category]] ||= []
+                category_to_tags[value[:category]] << tag
+                resources_file_refs = value[:paths].map do |resource|
+                  odr_resource_file_ref = Pathname.new(resource).relative_path_from(sandbox.root)
+                  tag_group.find_file_by_path(odr_resource_file_ref.to_s) || tag_group.new_file(odr_resource_file_ref)
+                end
+                [tag, resources_file_refs]
+              end]
+              native_targets.each do |native_target|
+                native_target.add_on_demand_resources(target_odr_files_refs)
+              end
+              target_odr_files_refs.values.flatten
+            end
+
+            # if the target ODR file references were updated, make sure we remove the ones that are no longer present
+            # for the target.
+            remaining_refs = current_file_refs - added_file_refs
+            remaining_refs.each do |ref|
+              native_targets.each do |user_target|
+                user_target.resources_build_phase.remove_file_reference(ref)
+              end
+              ref.remove_from_project
+            end
+            target_odr_group.recursive_children_groups.each { |g| g.remove_from_project if g.empty? }
+
+            attributes = project.root_object.attributes
+            attributes['KnownAssetTags'] = (attributes['KnownAssetTags'] ||= []) | category_to_tags.values.flatten
+            project.root_object.attributes = attributes
+
+            native_targets.each do |native_target|
+              update_on_demand_resources_build_settings(native_target, category_to_tags)
+            end
+          end
+
+          def update_on_demand_resources_build_settings(native_target, category_to_tags)
+            %w[ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS ON_DEMAND_RESOURCES_PREFETCH_ORDER].each do |category_key|
+              native_target.build_configurations.each do |c|
+                key = case category_key
+                      when 'ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'
+                        :initial_install
+                      when 'ON_DEMAND_RESOURCES_PREFETCH_ORDER'
+                        :prefetched
+                      else
+                        :download_on_demand
+                      end
+                tags_for_category = (c.build_settings[category_key] || '').split
+                category_to_tags_dup = category_to_tags.dup
+                tags_to_add = category_to_tags_dup.delete(key) || []
+                tags_to_delete = category_to_tags_dup.values.flatten
+                tags_for_category = (tags_for_category + tags_to_add - tags_to_delete).flatten.compact.uniq
+                if tags_for_category.empty?
+                  val = c.build_settings.delete(category_key)
+                  native_target.project.mark_dirty! unless val.nil?
+                else
+                  tags = tags_for_category.join(' ')
+                  unless c.build_settings[category_key] == tags
+                    c.build_settings[category_key] = tags
+                    native_target.project.mark_dirty!
+                  end
+                end
+              end
+            end
+          end
         end
 
         # Integrates the user project targets. Only the targets that do **not**
@@ -445,6 +566,7 @@ module Pod
             add_copy_resources_script_phase
             add_check_manifest_lock_script_phase
             add_user_script_phases
+            add_on_demand_resources
           end
         end
 
@@ -509,10 +631,12 @@ module Pod
           output_paths_by_config = {}
           if use_input_output_paths
             target.resource_paths_by_config.each do |config, resource_paths|
-              input_paths_key = XCFileListConfigKey.new(target.copy_resources_script_input_files_path(config), target.copy_resources_script_input_files_relative_path)
+              input_paths_key = XCFileListConfigKey.new(target.copy_resources_script_input_files_path(config),
+                                                        target.copy_resources_script_input_files_relative_path)
               input_paths_by_config[input_paths_key] = [script_path] + resource_paths
 
-              output_paths_key = XCFileListConfigKey.new(target.copy_resources_script_output_files_path(config), target.copy_resources_script_output_files_relative_path)
+              output_paths_key = XCFileListConfigKey.new(target.copy_resources_script_output_files_path(config),
+                                                         target.copy_resources_script_output_files_relative_path)
               output_paths_by_config[output_paths_key] = TargetIntegrator.resource_output_paths(resource_paths)
             end
           end
@@ -520,7 +644,9 @@ module Pod
           native_targets.each do |native_target|
             # Static library targets cannot include resources. Skip this phase from being added instead.
             next if native_target.symbol_type == :static_library
-            TargetIntegrator.create_or_update_copy_resources_script_phase_to_target(native_target, script_path, input_paths_by_config, output_paths_by_config)
+            TargetIntegrator.create_or_update_copy_resources_script_phase_to_target(native_target, script_path,
+                                                                                    input_paths_by_config,
+                                                                                    output_paths_by_config)
           end
         end
 
@@ -621,6 +747,20 @@ module Pod
             removed_phase_names.each do |phase_name|
               TargetIntegrator.remove_script_phase_from_target(native_target, phase_name)
             end
+          end
+        end
+
+        def add_on_demand_resources
+          target.pod_targets.each do |pod_target|
+            # When integrating with the user's project we are only interested in integrating ODRs from library specs
+            # and not test specs or app specs.
+            library_file_accessors = pod_target.file_accessors.select { |fa| fa.spec.library_specification? }
+            target_odr_group_name = "#{pod_target.label}-OnDemandResources"
+            # The 'Pods' group would always be there for production code however for tests its sometimes not added.
+            # This ensures its always present and makes it easier for existing and new tests.
+            parent_odr_group = target.user_project.main_group['Pods'] || target.user_project.new_group('Pods')
+            TargetIntegrator.update_on_demand_resources(target.sandbox, target.user_project, target.user_targets,
+                                                        library_file_accessors, parent_odr_group, target_odr_group_name)
           end
         end
 

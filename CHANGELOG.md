@@ -4,15 +4,132 @@ To install or update CocoaPods see this [guide](https://guides.cocoapods.org/usi
 
 To install release candidates run `[sudo] gem install cocoapods --pre`
 
-## 1.10.2 (2021-07-28)
+## 1.11.2 (2021-09-13)
 
 ##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
+* Do not validate modular header dependencies for pre-built Swift pods.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10912](https://github.com/CocoaPods/CocoaPods/issues/10912)
+
+
+## 1.11.1 (2021-09-13)
+
+##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
+* Handle spec repo urls with user info when determining if they are CDN.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10941](https://github.com/CocoaPods/CocoaPods/issues/10941)
+
+* Set `INFOPLIST_FILE` build setting to `$(SRCROOT)/App/App-Info.plist` during lint.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10927](https://github.com/CocoaPods/CocoaPods/issues/10927)
+
+* Set `PRODUCT_BUNDLE_IDENTIFIER` for generated app during lint.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10933](https://github.com/CocoaPods/CocoaPods/issues/10933)
+
+
+## 1.11.0 (2021-09-01)
+
+##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
+* None.  
+
+
+## 1.11.0.rc.1 (2021-08-25)
+
+##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
+* Correctly process multiple `xcframeworks` a pod provides.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10378](https://github.com/CocoaPods/CocoaPods/issues/10378)
+
+
+## 1.11.0.beta.2 (2021-08-11)
+
+##### Enhancements
+
+* Integrate ODR categories into projects.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10855](https://github.com/CocoaPods/CocoaPods/pull/10855)
+
+##### Bug Fixes
+
+* Pass correct paths for `select_slice` method.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10430](https://github.com/CocoaPods/CocoaPods/issues/10430)
+
+
+## 1.11.0.beta.1 (2021-08-09)
+
+##### Enhancements
+
+* Add support for integrating on demand resources.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [JunyiXie](https://github.com/JunyiXie)
+  [#9606](https://github.com/CocoaPods/CocoaPods/issues/9606)
+  [#10845](https://github.com/CocoaPods/CocoaPods/pull/10845)
+
+* Integrate `project_header_files` specified by specs.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#9820](https://github.com/CocoaPods/CocoaPods/issues/9820)
+
+* Mark RealityComposer-projects (`.rcproject`) files defined in resources for compilation.  
+  [Hendrik von Prince](https://github.com/parallaxe)
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10793](https://github.com/CocoaPods/CocoaPods/pull/10793)
+
+* Integrate test specs and app specs of pre-built pods.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10795](https://github.com/CocoaPods/CocoaPods/pull/10795)
+
+* Add support for `before_headers` and `after_headers` script phase DSL.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10770](https://github.com/CocoaPods/CocoaPods/issues/10770)
+
+* Fix touch on a missing directory for dSYM copy phase script.  
+  [alvarollmenezes](https://github.com/alvarollmenezes)
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10488](https://github.com/CocoaPods/CocoaPods/issues/10488)
+
+* Check the podfile sources and plugin sources when printing warnings without explicitly using the master source.  
+  [gonghonglou](https://github.com/gonghonglou)
+  [#10764](https://github.com/CocoaPods/CocoaPods/pull/10764)
+
+* Use relative paths in copy dsyms script.  
+  [Mickey Knox](https://github.com/knox)
+  [#10583](https://github.com/CocoaPods/CocoaPods/pull/10583)
+
+* Use `OpenURI.open_uri` instead.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10597](https://github.com/CocoaPods/CocoaPods/issues/10597)
+
+* Set minimum supported Ruby version to 2.6.  
+  [Igor Makarov](https://github.com/igor-makarov)
+  [#10412](https://github.com/CocoaPods/CocoaPods/pull/10412)
 
 * Improve compatibility with ActiveSupport 6  
   [Jun Jiang](https://github.com/jasl)
   [#10364](https://github.com/CocoaPods/CocoaPods/pull/10364)
 
-* Add a post_integrate_hook API  
+* Add a `pre_integrate_hook` API  
   [dcvz](https://github.com/dcvz)
   [#9935](https://github.com/CocoaPods/CocoaPods/pull/9935)
 
@@ -20,7 +137,7 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
   [Jun Jiang](https://github.com/jasl), [Igor Makarov](https://github.com/igor-makarov)
   [#10346](https://github.com/CocoaPods/CocoaPods/pull/10346)
 
-* Add a `--update-sources` option to `pod repo push` so one can ensure sources are up-to-date. 
+* Add a `--update-sources` option to `pod repo push` so one can ensure sources are up-to-date.  
   [Elton Gao](https://github.com/gyfelton)
   [Justin Martin](https://github.com/justinseanmartin)
   
@@ -36,13 +153,69 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
   [cltnschlosser](https://github.com/cltnschlosser)
   [#9916](https://github.com/CocoaPods/CocoaPods/pull/9916)
 
+* Add possibility to skip modulemap generation  
+  [till0xff](https://github.com/till0xff)
+  [#10235](https://github.com/CocoaPods/CocoaPods/issues/10235)
+
 * Add a `--version` option to `pod spec cat` and `pod spec which` for listing the podspec of a specific version  
   [pietbrauer](https://github.com/pietbrauer)
   [#10609](https://github.com/CocoaPods/CocoaPods/pull/10609)
 
 ##### Bug Fixes
 
-* Respect `--configuration` option when analyzing via `pod lib lint --analyze`. 
+* Fix resource variant groups in static frameworks  
+  [Igor Makarov](https://github.com/igor-makarov)
+  [#10834](https://github.com/CocoaPods/CocoaPods/pull/10834)
+  [#10605](https://github.com/CocoaPods/CocoaPods/issues/10605)
+
+* Fix adding embed frameworks script phase to unit test targets if xcframeworks are present.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10652](https://github.com/CocoaPods/CocoaPods/issues/10652)
+
+* Remove unused `install_xcframework_library` code.  
+  [Gio Lodi](https://github.com/mokagio)
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10831](https://github.com/CocoaPods/CocoaPods/pull/10831)
+
+* Validate vendored library names after they have been expanded.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10832](https://github.com/CocoaPods/CocoaPods/pull/10832)
+
+* Place frameworks from xcframeworks into a unique folder name to avoid duplicate outputs.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10106](https://github.com/CocoaPods/CocoaPods/issues/10106)
+
+* Update pod in Pods folder when changing the pod from branch to version in Podfie.  
+  [gonghonglou](https://github.com/gonghonglou)
+  [#10825](https://github.com/CocoaPods/CocoaPods/pull/10825)
+
+* Bump addressable dependency to 2.8.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10802](https://github.com/CocoaPods/CocoaPods/issues/10802)
+
+* Dedup bcsymbolmap paths found from multiple vendored frameworks.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10373](https://github.com/CocoaPods/CocoaPods/issues/10373)
+
+* Correctly filter dependencies for pod variants across different platforms.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10777](https://github.com/CocoaPods/CocoaPods/issues/10777)
+
+* Generate default `Info.plist` for consumer app during validation.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#8570](https://github.com/CocoaPods/CocoaPods/issues/8570)
+
+* Fix lint subspec error when the name of subspec start with the pod name.  
+  [XianpuMeng](https://github.com/XianpuMeng)
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#9906](https://github.com/CocoaPods/CocoaPods/issues/9906)
+
+* Update `ruby-macho` gem version to support 1.x and 2.x.  
+  [Eric Chamberlain](https://github.com/PeqNP)
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10390](https://github.com/CocoaPods/CocoaPods/issues/10390)
+
+* Respect `--configuration` option when analyzing via `pod lib lint --analyze`.  
   [Jenn Magder](https://github.com/jmagman)
   [#10476](https://github.com/CocoaPods/CocoaPods/issues/10476)
 
@@ -73,6 +246,16 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
 
 * Serialize schemes that do not need to be rewritten by Xcode.  
   [Samuel Giddins](https://github.com/segiddins)
+
+
+## 1.10.2 (2021-07-28)
+
+##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
 * Fix errors when archiving a Catalyst app which depends on a pod which uses `header_mappings_dir`.  
   [Thomas Goyne](https://github.com/tgoyne)
   [#10224](https://github.com/CocoaPods/CocoaPods/pull/10224)
@@ -199,12 +382,11 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
   [Gereon Steffens](https://github.com/gereons)
   [#9686](https://github.com/CocoaPods/CocoaPods/issues/9686)
 
-* Add a post_integrate_hook API  
+* Add a `post_integrate_hook` API  
   [lucasmpaim](https://github.com/lucasmpaim)
   [#7432](https://github.com/CocoaPods/CocoaPods/issues/7432)
 
-* Set the `BUILD_LIBRARY_FOR_DISTRIBUTION` build setting if integrating with
-  a target that has the setting set to `YES` (directly or in an .xcconfig).  
+* Set the `BUILD_LIBRARY_FOR_DISTRIBUTION` build setting if integrating with a target that has the setting set to `YES`.  
   [Juanjo López](https://github.com/juanjonol)
   [#9232](https://github.com/CocoaPods/CocoaPods/issues/9232)
 
@@ -212,7 +394,7 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
   [Paul Beusterien](https://github.com/paulb777)
   [#9392](https://github.com/CocoaPods/CocoaPods/pull/9392)
 
-* Add --use-static-frameworks lint option  
+* Add `--use-static-frameworks` lint option  
   [Paul Beusterien](https://github.com/paulb777)
   [#9632](https://github.com/CocoaPods/CocoaPods/pull/9632)
 

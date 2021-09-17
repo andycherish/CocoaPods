@@ -128,6 +128,7 @@ module Pod
       #
       def public_headers(include_frameworks = false)
         public_headers = public_header_files
+        project_headers = project_header_files
         private_headers = private_header_files
         if public_headers.nil? || public_headers.empty?
           header_files = headers
@@ -135,7 +136,13 @@ module Pod
           header_files = public_headers
         end
         header_files += vendored_frameworks_headers if include_frameworks
-        header_files - private_headers
+        header_files - project_headers - private_headers
+      end
+
+      # @return [Array<Pathname>] The project headers of the specification.
+      #
+      def project_headers
+        project_header_files
       end
 
       # @return [Array<Pathname>] The private headers of the specification.
@@ -177,7 +184,7 @@ module Pod
       #
       def vendored_static_xcframeworks
         vendored_xcframeworks.select do |path|
-          Xcode::XCFramework.new(path).build_type == BuildType.static_framework
+          Xcode::XCFramework.new(spec.name, path).build_type == BuildType.static_framework
         end
       end
 
@@ -212,6 +219,7 @@ module Pod
           file_accessors.map(&:preserve_paths),
           file_accessors.map(&:readme),
           file_accessors.map(&:resources),
+          file_accessors.map(&:on_demand_resources_files),
           file_accessors.map(&:source_files),
           file_accessors.map(&:module_map),
         ]
@@ -238,14 +246,17 @@ module Pod
         Pathname.glob(headers_dir + '**/' + GLOB_PATTERNS[:public_header_files])
       end
 
-      # @param [Pathname] framework
+      # @param [String] target_name
+      #         The target name this .xcframework belongs to
+      #
+      # @param [Pathname] framework_path
       #         The path to the .xcframework
       #
       # @return [Array<Pathname>] The paths to all the headers included in the
       #         vendored xcframework
       #
-      def self.vendored_xcframework_headers(framework)
-        xcframework = Xcode::XCFramework.new(framework)
+      def self.vendored_xcframework_headers(target_name, framework_path)
+        xcframework = Xcode::XCFramework.new(target_name, framework_path)
         xcframework.slices.flat_map do |slice|
           vendored_frameworks_headers(slice.path)
         end
@@ -259,7 +270,7 @@ module Pod
           self.class.vendored_frameworks_headers(framework)
         end.uniq
         paths.concat Array.new(vendored_xcframeworks.flat_map do |framework|
-          self.class.vendored_xcframework_headers(framework)
+          self.class.vendored_xcframework_headers(spec.name, framework)
         end)
         paths
       end
@@ -323,6 +334,26 @@ module Pod
         resource_bundles.values.flatten
       end
 
+      # @return [Hash{String => Hash] The expanded paths of the on demand resources specified
+      #         keyed by their tag including their category.
+      #
+      def on_demand_resources
+        result = {}
+        spec_consumer.on_demand_resources.each do |tag_name, file_patterns|
+          paths = expanded_paths(file_patterns[:paths],
+                                 :exclude_patterns => spec_consumer.exclude_files,
+                                 :include_dirs => true)
+          result[tag_name] = { :paths => paths, :category => file_patterns[:category] }
+        end
+        result
+      end
+
+      # @return [Array<Pathname>] The expanded paths of the on demand resources.
+      #
+      def on_demand_resources_files
+        on_demand_resources.values.flat_map { |v| v[:paths] }
+      end
+
       # @return [Pathname] The of the prefix header file of the specification.
       #
       def prefix_header
@@ -331,7 +362,7 @@ module Pod
         end
       end
 
-      # @return [Pathname] The path of the auto-detected README file.
+      # @return [Pathname, nil] The path of the auto-detected README file.
       #
       def readme
         path_list.glob([GLOB_PATTERNS[:readme]]).first
@@ -413,7 +444,14 @@ module Pod
         paths_for_attribute(:public_header_files)
       end
 
-      # @return [Array<Pathname>] The paths of the user-specified public header
+      # @return [Array<Pathname>] The paths of the user-specified project header
+      #         files.
+      #
+      def project_header_files
+        paths_for_attribute(:project_header_files)
+      end
+
+      # @return [Array<Pathname>] The paths of the user-specified private header
       #         files.
       #
       def private_header_files

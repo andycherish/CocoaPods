@@ -810,6 +810,38 @@ module Pod
             )
           end
 
+          it 'picks the right dependencies across different variants' do
+            @podfile = Pod::Podfile.new do
+              source SpecHelper.test_repo_url
+              project 'SampleProject/SampleProject'
+
+              target 'TestRunner' do
+                platform :ios, '8.0'
+                pod 'OrangeFramework'
+              end
+
+              target 'SampleProject' do
+                platform :ios, '9.0'
+                pod 'OrangeFramework'
+              end
+            end
+            @analyzer = Pod::Installer::Analyzer.new(config.sandbox, @podfile, nil, [], true, false, @sources_manager)
+            result = @analyzer.analyze
+            result.targets.count.should == 2
+
+            pod_target_ios8 = result.targets[0].pod_targets.find { |pt| pt.label == 'OrangeFramework-iOS8.0' }
+            pod_target_ios8.dependent_targets.count == 1
+            pod_target_ios8.dependent_targets.map(&:label).should == %w(
+              matryoshka-iOS8.0
+            )
+
+            pod_target_ios9 = result.targets[1].pod_targets.find { |pt| pt.label == 'OrangeFramework-iOS9.0' }
+            pod_target_ios9.dependent_targets.count == 1
+            pod_target_ios9.dependent_targets.map(&:label).should == %w(
+              matryoshka-iOS9.0
+            )
+          end
+
           it 'does not create multiple variants across different targets that require different set of testspecs' do
             @podfile = Pod::Podfile.new do
               source SpecHelper.test_repo_url
@@ -1427,7 +1459,8 @@ module Pod
 
       it 'unlocks only local pod when specification checksum changes' do
         sandbox = config.sandbox
-        local_spec = Specification.from_hash('name' => 'LocalPod', 'version' => '1.1', 'dependencies' => { 'Expecta' => ['~> 0.0'] })
+        spec_hash = { 'name' => 'LocalPod', 'version' => '1.1', 'dependencies' => { 'Expecta' => ['~> 0.0'] } }
+        local_spec = Specification.from_hash(spec_hash)
         sandbox.stubs(:specification).with('LocalPod').returns(local_spec)
         podfile = Podfile.new do
           platform :ios, '8.0'
@@ -1454,7 +1487,8 @@ module Pod
 
       it 'raises if change in local pod specification conflicts with lockfile' do
         sandbox = config.sandbox
-        local_spec = Specification.from_hash('name' => 'LocalPod', 'version' => '1.0', 'dependencies' => { 'Expecta' => ['0.2.2'] })
+        spec_hash = { 'name' => 'LocalPod', 'version' => '1.0', 'dependencies' => { 'Expecta' => ['0.2.2'] } }
+        local_spec = Specification.from_hash(spec_hash)
         sandbox.stubs(:specification).with('LocalPod').returns(local_spec)
         podfile = Podfile.new do
           platform :ios, '8.0'

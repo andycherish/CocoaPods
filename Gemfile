@@ -20,7 +20,7 @@ gemspec
 
 group :development do
   cp_gem 'claide',                'CLAide'
-  cp_gem 'cocoapods-core',        'Core'
+  cp_gem 'cocoapods-core',        'Core', '1-11-stable'
   cp_gem 'cocoapods-deintegrate', 'cocoapods-deintegrate'
   cp_gem 'cocoapods-downloader',  'cocoapods-downloader'
   cp_gem 'cocoapods-plugins',     'cocoapods-plugins'
@@ -48,7 +48,7 @@ group :development do
 
   # Integration tests
   gem 'diffy'
-  gem 'clintegracon'
+  gem 'clintegracon', :git => 'https://github.com/mrackwitz/CLIntegracon.git'
 
   # Code Quality
   gem 'inch_by_inch'

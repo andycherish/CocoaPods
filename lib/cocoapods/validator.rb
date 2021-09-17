@@ -118,7 +118,7 @@ module Pod
       # Replace default spec with a subspec if asked for
       a_spec = spec
       if spec && @only_subspec
-        subspec_name = @only_subspec.start_with?(spec.root.name) ? @only_subspec : "#{spec.root.name}/#{@only_subspec}"
+        subspec_name = @only_subspec.start_with?("#{spec.root.name}/") ? @only_subspec : "#{spec.root.name}/#{@only_subspec}"
         a_spec = spec.subspec_by_name(subspec_name, true, true)
         @subspec_name = a_spec.name
       end
@@ -581,11 +581,23 @@ module Pod
     def create_app_project
       app_project = Xcodeproj::Project.new(validation_dir + 'App.xcodeproj')
       app_target = Pod::Generator::AppTargetHelper.add_app_target(app_project, consumer.platform_name, deployment_target)
+      sandbox = Sandbox.new(config.sandbox_root)
+      info_plist_path = app_project.path.dirname.+('App/App-Info.plist')
+      Pod::Installer::Xcode::PodsProjectGenerator::TargetInstallerHelper.create_info_plist_file_with_sandbox(sandbox,
+                                                                                                             info_plist_path,
+                                                                                                             app_target,
+                                                                                                             '1.0.0',
+                                                                                                             Platform.new(consumer.platform_name),
+                                                                                                             :appl,
+                                                                                                             :build_setting_value => '$(SRCROOT)/App/App-Info.plist')
       Pod::Generator::AppTargetHelper.add_swift_version(app_target, derived_swift_version)
-      # Lint will fail if a AppIcon is set but no image is found with such name
-      # Happens only with Static Frameworks enabled but shouldn't be set anyway
       app_target.build_configurations.each do |config|
+        # Lint will fail if a AppIcon is set but no image is found with such name
+        # Happens only with Static Frameworks enabled but shouldn't be set anyway
         config.build_settings.delete('ASSETCATALOG_COMPILER_APPICON_NAME')
+        # Ensure this is set generally but we have seen an issue with ODRs:
+        # see: https://github.com/CocoaPods/CocoaPods/issues/10933
+        config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'org.cocoapods.${PRODUCT_NAME:rfc1034identifier}'
       end
       app_project.save
       app_project.recreate_user_schemes
@@ -775,7 +787,7 @@ module Pod
 
     FILE_PATTERNS = %i(source_files resources preserve_paths vendored_libraries
                        vendored_frameworks public_header_files preserve_paths
-                       private_header_files resource_bundles).freeze
+                       project_header_files private_header_files resource_bundles).freeze
 
     # It checks that every file pattern specified in a spec yields
     # at least one file. It requires the pods to be already present
@@ -809,6 +821,22 @@ module Pod
       return unless !file_accessor.spec_consumer.send(attr_name).empty? && file_accessor.send(attr_name).empty?
 
       add_result(message_type, 'file patterns', "The `#{attr_name}` pattern did not match any file.")
+    end
+
+    def _validate_vendored_libraries
+      file_accessor.vendored_libraries.each do |lib|
+        basename = File.basename(lib)
+        lib_name = basename.downcase
+        unless lib_name.end_with?('.a') && lib_name.start_with?('lib')
+          warning('vendored_libraries', "`#{basename}` does not match the expected static library name format `lib[name].a`")
+        end
+      end
+      validate_nonempty_patterns(:vendored_libraries, :warning)
+    end
+
+    def _validate_project_header_files
+      _validate_header_files(:project_header_files)
+      validate_nonempty_patterns(:project_header_files, :warning)
     end
 
     def _validate_private_header_files

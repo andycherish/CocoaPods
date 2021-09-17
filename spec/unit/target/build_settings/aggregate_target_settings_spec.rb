@@ -205,7 +205,7 @@ module Pod
             end
           end
 
-          it 'does not links the pod targets with the aggregate target for non-whitelisted configuration' do
+          it 'does not link the pod targets with the aggregate target for non-whitelisted configuration' do
             @generator = AggregateTargetSettings.new(@target, 'Debug', :configuration => :debug)
             @xcconfig = @generator.dup.generate
             @xcconfig.to_hash['OTHER_LDFLAGS'].should.be.nil
@@ -213,7 +213,7 @@ module Pod
 
           it 'does propagate framework or libraries from a non test specification to an aggregate target' do
             target_definition = stub('target_definition', :inheritance => 'complete', :abstract? => false, :podfile => Podfile.new, :platform => Platform.ios)
-            spec = stub('spec', :library_specification? => true, :spec_type => :library)
+            spec = stub('spec', :library_specification? => true, :spec_type => :library, :name => 'Spec')
             consumer = stub('consumer',
                             :libraries => ['xml2'],
                             :frameworks => ['XCTest'],
@@ -221,6 +221,7 @@ module Pod
                             :spec => spec,
                            )
             xcframework = stub('xcframework',
+                               :target_name => 'PodTarget',
                                :name => 'VendoredXCFramework',
                                :build_type => BuildType.static_library,
                                :slices => [stub('slice', :binary_path => Pathname.new('/tmp/path/to/libVendoredXCFramework.a'))],
@@ -255,6 +256,7 @@ module Pod
                               :uses_swift? => false,
                               :build_product_path => 'BPP',
                               :product_basename => 'PodTarget',
+                              :label => 'PodTarget',
                               :target_definitions => [target_definition],
                               :root_spec => spec,
                              )

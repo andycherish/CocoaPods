@@ -15,9 +15,10 @@ module Pod
         target_definition = Podfile::TargetDefinition.new('Pods', nil)
         target_definition.abstract = false
         user_build_configurations = { 'Release' => :release, 'Debug' => :debug }
+        @banana_pod_target = fixture_pod_target('banana-lib/BananaLib.podspec')
         @pod_bundle = AggregateTarget.new(config.sandbox, BuildType.static_library, user_build_configurations, [],
                                           Platform.ios, target_definition, project_path.dirname, @project,
-                                          [@target.uuid], {})
+                                          [@target.uuid], 'Release' => [@banana_pod_target], 'Debug' => [@banana_pod_target])
         @pod_bundle.stubs(:resource_paths_by_config).returns('Release' => %w(${PODS_ROOT}/Lib/Resources/image.png))
         @pod_bundle.stubs(:framework_paths_by_config).returns('Release' => [Xcode::FrameworkPaths.new('${PODS_BUILD_DIR}/Lib/Lib.framework')])
         configuration = Xcodeproj::Config.new(
@@ -622,11 +623,25 @@ module Pod
         end
 
         it 'moves custom shell scripts according to their execution position' do
-          shell_script_one = { :name => 'Custom Script', :script => 'echo "Hello World"', :execution_position => :before_compile }
-          shell_script_two = { :name => 'Custom Script 2', :script => 'echo "Hello Aliens"' }
-          @pod_bundle.target_definition.stubs(:script_phases).returns([shell_script_one, shell_script_two])
+          @pod_bundle.target_definition.stubs(:script_phases).returns([])
           @target_integrator.integrate!
           target = @target_integrator.send(:native_targets).first
+          # By calling this, xcodeproj automatically adds this phase to the native target.
+          target.headers_build_phase
+          target.build_phases.map(&:display_name).should == [
+            '[CP] Check Pods Manifest.lock',
+            'Sources',
+            'Frameworks',
+            'Resources',
+            '[CP] Embed Pods Frameworks',
+            '[CP] Copy Pods Resources',
+            'Headers',
+          ]
+          shell_script_one = { :name => 'Custom Script', :script => 'echo "Hello World"', :execution_position => :before_compile }
+          shell_script_two = { :name => 'Custom Script 2', :script => 'echo "Hello Aliens"' }
+          shell_script_three = { :name => 'Custom Script 3', :script => 'echo "Hello Aliens"', :execution_position => :before_headers }
+          @pod_bundle.target_definition.stubs(:script_phases).returns([shell_script_one, shell_script_two, shell_script_three])
+          @target_integrator.integrate!
           target.build_phases.map(&:display_name).should == [
             '[CP] Check Pods Manifest.lock',
             '[CP-User] Custom Script',
@@ -635,11 +650,14 @@ module Pod
             'Resources',
             '[CP] Embed Pods Frameworks',
             '[CP] Copy Pods Resources',
+            '[CP-User] Custom Script 3',
+            'Headers',
             '[CP-User] Custom Script 2',
           ]
           shell_script_one = { :name => 'Custom Script', :script => 'echo "Hello World"', :execution_position => :after_compile }
           shell_script_two = { :name => 'Custom Script 2', :script => 'echo "Hello Aliens"', :execution_position => :before_compile }
-          @pod_bundle.target_definition.stubs(:script_phases).returns([shell_script_one, shell_script_two])
+          shell_script_three = { :name => 'Custom Script 3', :script => 'echo "Hello Aliens"', :execution_position => :after_headers }
+          @pod_bundle.target_definition.stubs(:script_phases).returns([shell_script_one, shell_script_two, shell_script_three])
           @target_integrator.integrate!
           target.build_phases.map(&:display_name).should == [
             '[CP] Check Pods Manifest.lock',
@@ -650,6 +668,8 @@ module Pod
             'Resources',
             '[CP] Embed Pods Frameworks',
             '[CP] Copy Pods Resources',
+            'Headers',
+            '[CP-User] Custom Script 3',
           ]
           shell_script_one = { :name => 'Custom Script', :script => 'echo "Hello World"' }
           shell_script_two = { :name => 'Custom Script 2', :script => 'echo "Hello Aliens"' }
@@ -664,6 +684,7 @@ module Pod
             'Resources',
             '[CP] Embed Pods Frameworks',
             '[CP] Copy Pods Resources',
+            'Headers',
           ]
         end
 
@@ -732,6 +753,180 @@ module Pod
         end
       end
 
+      it 'adds and remove on demand resources to the user target resources build phase' do
+        on_demand_resources = { 'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :download_on_demand } }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        target = @target_integrator.send(:native_targets).first
+        target.resources_build_phase.files.map(&:display_name).should == ['InfoPlist.strings', 'resource.png']
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources').should.not.be.nil
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources/tag1').should.not.be.nil
+        @project['Pods']['BananaLib-OnDemandResources']['tag1'].files.map(&:display_name).should == ['resource.png']
+        @project.root_object.attributes['KnownAssetTags'].should == ['tag1']
+        # Now pretend target no longer specifies ODRs.
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns({})
+        @target_integrator.integrate!
+        target.resources_build_phase.files.map(&:display_name).should == ['InfoPlist.strings']
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources').should.be.nil
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources/tag1').should.be.nil
+        # Despite the fact we added this asset tag we can never guarantee it was added by CocoaPods so we can never
+        # delete any KnownAssetTags. We can let the user do this.
+        @project.root_object.attributes['KnownAssetTags'].should == ['tag1']
+      end
+
+      it 'removes stale on demand resource file references' do
+        on_demand_resources = {
+          'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :download_on_demand },
+          'tag2' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource2.png'], :category => :download_on_demand },
+        }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        target = @target_integrator.send(:native_targets).first
+        target.resources_build_phase.files.map(&:display_name).should == ['InfoPlist.strings', 'resource.png', 'resource2.png']
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources').should.not.be.nil
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources/tag1').should.not.be.nil
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources/tag2').should.not.be.nil
+        @project['Pods']['BananaLib-OnDemandResources']['tag1'].files.map(&:display_name).should == ['resource.png']
+        @project['Pods']['BananaLib-OnDemandResources']['tag2'].files.map(&:display_name).should == ['resource2.png']
+        @project.root_object.attributes['KnownAssetTags'].should == %w[tag1 tag2]
+        on_demand_resources = { 'tag2' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource2.png'], :category => :download_on_demand } }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        target.resources_build_phase.files.map(&:display_name).should == ['InfoPlist.strings', 'resource2.png']
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources').should.not.be.nil
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources/tag1').should.be.nil
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources/tag2').should.not.be.nil
+        @project['Pods']['BananaLib-OnDemandResources']['tag2'].files.map(&:display_name).should == ['resource2.png']
+        @project.main_group.find_subpath('Pods/BananaLib-OnDemandResources').should.not.be.nil
+        # Despite the fact we added this asset tag we can never guarantee it was added by CocoaPods so we can never
+        # delete any KnownAssetTags. We can let the user do this.
+        @project.root_object.attributes['KnownAssetTags'].should == %w[tag1 tag2]
+      end
+
+      it 'completely removes build settings related to on demand resources if they are empty' do
+        on_demand_resources = { 'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :initial_install } }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @project.dirty?.should.be.false
+        @target_integrator.integrate!
+        target = @target_integrator.send(:native_targets).first
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'tag1'
+        end
+        @project.dirty?.should.be.true
+        @project.save
+        @project.dirty?.should.be.false
+        # Now pretend target no longer specifies ODRs.
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns({})
+        @target_integrator.integrate!
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should.be.nil
+        end
+        @project.dirty?.should.be.true
+      end
+
+      it 'maintains on demand resources build settings when a target no longer specifies on demand resources' do
+        target = @target_integrator.send(:native_targets).first
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'] = 'existing_tag'
+        end
+        @project.dirty?.should.be.false
+        on_demand_resources = { 'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :initial_install } }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'existing_tag tag1'
+        end
+        @project.dirty?.should.be.true
+        @project.save
+        @project.dirty?.should.be.false
+        # Now pretend target no longer specifies ODRs.
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns({})
+        @target_integrator.integrate!
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'existing_tag'
+        end
+        @project.dirty?.should.be.true
+      end
+
+      it 'does not mark the project as dirty if on demand resources build settings did not change' do
+        on_demand_resources = {
+          'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :initial_install },
+          'tag2' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource2.png'], :category => :initial_install },
+        }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        target = @target_integrator.send(:native_targets).first
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'tag1 tag2'
+        end
+        @project.dirty?.should.be.true
+        @project.save
+        @project.dirty?.should.be.false
+        @target_integrator.integrate!
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'tag1 tag2'
+        end
+        @project.dirty?.should.be.false
+      end
+
+      it 'sets on demand resource category build settings' do
+        on_demand_resources = {
+          'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :initial_install },
+          'tag2' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource2.png'], :category => :prefetched },
+        }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        target = @target_integrator.send(:native_targets).first
+        @project.root_object.attributes['KnownAssetTags'].should == %w[tag1 tag2]
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'tag1'
+          bc.build_settings['ON_DEMAND_RESOURCES_PREFETCH_ORDER'].should == 'tag2'
+        end
+      end
+
+      it 'sets multiple on demand resource categories on a single build setting' do
+        on_demand_resources = {
+          'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :initial_install },
+          'tag2' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource2.png'], :category => :initial_install },
+        }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        target = @target_integrator.send(:native_targets).first
+        @project.root_object.attributes['KnownAssetTags'].should == %w[tag1 tag2]
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'tag1 tag2'
+          bc.build_settings['ON_DEMAND_RESOURCES_PREFETCH_ORDER'].should.be.nil
+        end
+      end
+
+      it 'updates on demand resources build settings if they change' do
+        on_demand_resources = {
+          'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :initial_install },
+          'tag2' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource2.png'], :category => :initial_install },
+          'tag3' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource3.png'], :category => :initial_install },
+        }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        target = @target_integrator.send(:native_targets).first
+        @project.root_object.attributes['KnownAssetTags'].should == %w[tag1 tag2 tag3]
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'tag1 tag2 tag3'
+          bc.build_settings['ON_DEMAND_RESOURCES_PREFETCH_ORDER'].should.be.nil
+        end
+        on_demand_resources = {
+          'tag1' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource.png'], :category => :prefetched },
+          'tag2' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource2.png'], :category => :initial_install },
+          'tag3' => { :paths => [config.sandbox.root + 'banana-lib/path/to/resource3.png'], :category => :download_on_demand },
+        }
+        @banana_pod_target.file_accessors.first.stubs(:on_demand_resources).returns(on_demand_resources)
+        @target_integrator.integrate!
+        @project.root_object.attributes['KnownAssetTags'].should == %w[tag1 tag2 tag3]
+        target.build_configurations.each do |bc|
+          bc.build_settings['ON_DEMAND_RESOURCES_INITIAL_INSTALL_TAGS'].should == 'tag2'
+          bc.build_settings['ON_DEMAND_RESOURCES_PREFETCH_ORDER'].should == 'tag1'
+        end
+      end
+
       describe 'Script paths' do
         it 'calculates the output paths of the embed frameworks script' do
           paths = [
@@ -743,7 +938,7 @@ module Pod
             Xcode::FrameworkPaths.new('${BUILT_PRODUCTS_DIR}/ReleaseCompiledFramework/CompiledFramework.framework'),
           ]
           xcframeworks = [
-            Xcode::XCFramework.new(fixture('CoconutLib.xcframework')),
+            Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework')),
           ]
           xcframeworks[0].stubs(:build_type).returns(BuildType.dynamic_framework)
           TargetIntegrator.embed_frameworks_output_paths(paths, xcframeworks).sort.should == %w(
@@ -755,7 +950,7 @@ module Pod
 
         it 'does not include static xcframeworks in the embed frameworks output paths' do
           xcframeworks = [
-            Xcode::XCFramework.new(fixture('CoconutLib.xcframework')),
+            Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework')),
           ]
           xcframeworks[0].stubs(:build_type).returns(BuildType.static_framework)
           TargetIntegrator.embed_frameworks_output_paths([], xcframeworks).should == []

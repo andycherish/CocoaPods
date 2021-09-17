@@ -43,18 +43,14 @@ module Pod
               test_file_accessors = target.file_accessors.select { |fa| fa.spec.test_specification? }
               app_file_accessors = target.file_accessors.select { |fa| fa.spec.app_specification? }
 
-              unless target.should_build?
-                # For targets that should not be built (e.g. pre-built vendored frameworks etc), we add a placeholder
-                # PBXAggregateTarget that will be used to wire up dependencies later.
-                native_target = add_placeholder_target
-                resource_bundle_targets = add_resources_bundle_targets(library_file_accessors).values.flatten
-                create_copy_dsyms_script
-                create_copy_xcframeworks_script unless target.xcframeworks.values.all?(&:empty?)
-                create_xcconfig_file(native_target, resource_bundle_targets)
-                return TargetInstallationResult.new(target, native_target, resource_bundle_targets)
-              end
+              native_target = if target.should_build?
+                                add_target
+                              else
+                                # For targets that should not be built (e.g. pre-built vendored frameworks etc), we add a placeholder
+                                # PBXAggregateTarget that will be used to wire up dependencies later.
+                                add_placeholder_target
+                              end
 
-              native_target = add_target
               resource_bundle_targets = add_resources_bundle_targets(library_file_accessors).values.flatten
 
               test_native_targets = add_test_targets
@@ -65,8 +61,10 @@ module Pod
               app_resource_bundle_targets = add_resources_bundle_targets(app_file_accessors)
 
               add_files_to_build_phases(native_target, test_native_targets, app_native_targets)
-              validate_targets_contain_sources(test_native_targets + app_native_targets.values + [native_target])
-              validate_xcframeworks
+              targets_to_validate = test_native_targets + app_native_targets.values
+              targets_to_validate << native_target if target.should_build?
+              validate_targets_contain_sources(targets_to_validate)
+              validate_xcframeworks if target.should_build?
 
               create_copy_xcframeworks_script unless target.xcframeworks.values.all?(&:empty?)
 
@@ -74,7 +72,7 @@ module Pod
               create_test_xcconfig_files(test_native_targets, test_resource_bundle_targets)
               create_app_xcconfig_files(app_native_targets, app_resource_bundle_targets)
 
-              if target.defines_module?
+              if target.should_build? && target.defines_module? && !skip_modulemap?(target.library_specs)
                 create_module_map(native_target) do |generator|
                   generator.headers.concat module_map_additional_headers
                 end
@@ -99,20 +97,21 @@ module Pod
                 end
               end
 
-              if target.build_as_framework?
+              if target.should_build? && target.build_as_framework?
                 unless skip_info_plist?(native_target)
-                  create_info_plist_file(target.info_plist_path, native_target, target.version, target.platform, :additional_entries => target.info_plist_entries)
+                  create_info_plist_file(target.info_plist_path, native_target, target.version, target.platform,
+                                         :additional_entries => target.info_plist_entries)
                 end
                 create_build_phase_to_symlink_header_folders(native_target)
               end
 
-              if target.build_as_library? && target.uses_swift?
+              if target.should_build? && target.build_as_library? && target.uses_swift?
                 add_swift_library_compatibility_header_phase(native_target)
               end
 
               project_directory = project.path.dirname
 
-              unless skip_pch?(target.library_specs)
+              if target.should_build? && !skip_pch?(target.library_specs)
                 path = target.prefix_header_path
                 create_prefix_header(path, library_file_accessors, target.platform, native_target, project_directory)
                 add_file_to_support_group(path)
@@ -135,7 +134,7 @@ module Pod
                   add_file_to_support_group(path)
                 end
               end
-              create_dummy_source(native_target)
+              create_dummy_source(native_target) if target.should_build?
               create_copy_dsyms_script
               clean_support_files_temp_dir
               TargetInstallationResult.new(target, native_target, resource_bundle_targets,
@@ -189,6 +188,10 @@ module Pod
           #
           def skip_pch?(specs)
             specs.any? { |spec| spec.root.prefix_header_file.is_a?(FalseClass) }
+          end
+
+          def skip_modulemap?(specs)
+            specs.any? { |spec| spec.module_map.is_a?(FalseClass) }
           end
 
           # True if info.plist generation should be skipped
@@ -264,10 +267,10 @@ module Pod
           # @yield_param  [Array<PBXFileReference>} The filtered resource file references to be installed
           #               in the compile sources phase.
           #
-          # @note   Core Data model directories (.xcdatamodeld) used to be added to the
-          #         `Copy Resources` build phase like all other resources, since they would
-          #         compile correctly in either the resources or compile phase. In recent
-          #         versions of xcode, there's an exception for data models that generate
+          # @note   Core Data model directories (.xcdatamodeld) and RealityKit projects (.rcproject)
+          #         used to be added to the `Copy Resources` build phase like all other resources,
+          #         since they would compile correctly in either the resources or compile phase. In
+          #         recent versions of xcode, there's an exception for data models that generate
           #         headers. These need to be added to the compile sources phase of a real
           #         target for the headers to be built in time for code in the target to
           #         use them. These kinds of models generally break when added to resource
@@ -287,7 +290,7 @@ module Pod
 
               ref
             end.compact.uniq
-            compile_phase_matcher = lambda { |ref| !(ref.path =~ /.*\.xcdatamodeld/i).nil? }
+            compile_phase_matcher = lambda { |ref| !(ref.path =~ /.*\.(xcdatamodeld|rcproject)/i).nil? }
             compile_phase_refs, resources_phase_refs = file_references.partition(&compile_phase_matcher)
             yield compile_phase_refs, resources_phase_refs
           end
@@ -307,21 +310,26 @@ module Pod
           #
           # @return [void]
           #
-          def add_files_to_build_phases(native_target, test_native_targets, app_native_targets)
+          def add_files_to_build_phases(library_native_target, test_native_targets, app_native_targets)
             target.file_accessors.each do |file_accessor|
               consumer = file_accessor.spec_consumer
 
               native_target =  case consumer.spec.spec_type
                                when :library
-                                 native_target
+                                 library_native_target
                                when :test
                                  test_native_target_from_spec(consumer.spec, test_native_targets)
                                when :app
                                  app_native_targets[consumer.spec]
+                               else
+                                 raise ArgumentError, "Unknown spec type #{consumer.spec.spec_type}."
                                end
+
+              next if native_target.is_a?(Xcodeproj::Project::Object::PBXAggregateTarget)
 
               headers = file_accessor.headers
               public_headers = file_accessor.public_headers.map(&:realpath)
+              project_headers = file_accessor.project_headers.map(&:realpath)
               private_headers = file_accessor.private_headers.map(&:realpath)
               other_source_files = file_accessor.other_source_files
 
@@ -344,7 +352,7 @@ module Pod
 
               header_file_refs = project_file_references_array(headers, 'header')
               native_target.add_file_references(header_file_refs) do |build_file|
-                add_header(file_accessor, build_file, public_headers, private_headers, native_target)
+                add_header(file_accessor, build_file, public_headers, project_headers, private_headers, native_target)
               end
 
               other_file_refs = project_file_references_array(other_source_files, 'other source')
@@ -356,7 +364,10 @@ module Pod
                 native_target.add_file_references(compile_phase_refs, nil)
 
                 if target.build_as_static_framework? && consumer.spec.library_specification?
-                  resource_phase_refs = resource_phase_refs.select { |ref| Target.resource_extension_compilable?(File.extname(ref.path)) }
+                  resource_phase_refs = resource_phase_refs.select do |ref|
+                    filename = ref.name || ref.path
+                    Target.resource_extension_compilable?(File.extname(filename))
+                  end
                 end
 
                 native_target.add_resources(resource_phase_refs)
@@ -988,7 +999,7 @@ module Pod
           end
 
           def create_umbrella_header(native_target)
-            return super(native_target) unless custom_module_map
+            super(native_target) unless custom_module_map
           end
 
           def custom_module_map
@@ -1025,12 +1036,14 @@ module Pod
                                                    end
           end
 
-          def add_header(file_accessor, build_file, public_headers, private_headers, native_target)
+          def add_header(file_accessor, build_file, public_headers, project_headers, private_headers, native_target)
             file_ref = build_file.file_ref
             acl = if !target.build_as_framework? # Headers are already rooted at ${PODS_ROOT}/Headers/P*/[pod]/...
                     'Project'
                   elsif public_headers.include?(file_ref.real_path)
                     'Public'
+                  elsif project_headers.include?(file_ref.real_path)
+                    'Project'
                   elsif private_headers.include?(file_ref.real_path)
                     'Private'
                   else
@@ -1186,7 +1199,11 @@ module Pod
             def dsym_paths(target)
               dsym_paths = target.framework_paths.values.flatten.reject { |fmwk_path| fmwk_path.dsym_path.nil? }.map(&:dsym_path)
               dsym_paths.concat(target.xcframeworks.values.flatten.flat_map { |xcframework| xcframework_dsyms(xcframework.path) })
-              dsym_paths
+              dsym_paths.map do |dsym_path|
+                dsym_pathname = Pathname(dsym_path)
+                dsym_path = "${PODS_ROOT}/#{dsym_pathname.relative_path_from(target.sandbox.root)}" unless dsym_pathname.relative?
+                dsym_path
+              end
             end
 
             # @param [PodTarget] target the target to be installed
@@ -1196,7 +1213,7 @@ module Pod
             def bcsymbolmap_paths(target)
               target.framework_paths.values.flatten.reject do |fmwk_path|
                 fmwk_path.bcsymbolmap_paths.nil?
-              end.flat_map(&:bcsymbolmap_paths)
+              end.flat_map(&:bcsymbolmap_paths).uniq
             end
 
             # @param  [Pathname] xcframework_path

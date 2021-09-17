@@ -647,6 +647,97 @@ module Pod
                 e = ->() { @ios_installer.install! }.should.raise(Informative)
                 e.message.should.include '[!] Using Swift static libraries with custom module maps is currently not supported. Please build `WatermelonLib` as a framework or remove the custom module map.'
               end
+
+              it 'integrates test specs and app specs even for targets that do not require building' do
+                @watermelon_ios_pod_target.stubs(:should_build?).returns(false)
+                @watermelon_spec.app_specs.each { |s| s.pod_target_xcconfig = {} }
+                installation_result = @ios_installer.install!
+                @project.targets.count.should == 9
+                @project.targets.first.name.should == 'WatermelonLib'
+                @project.targets.first.class.should == Xcodeproj::Project::PBXAggregateTarget
+                unit_test_native_target = @project.targets[1]
+                unit_test_native_target.name.should == 'WatermelonLib-Unit-Tests'
+                unit_test_native_target.product_reference.name.should == 'WatermelonLib-Unit-Tests'
+                unit_test_native_target.product_reference.path.should == 'WatermelonLib-Unit-Tests.xctest'
+                unit_test_native_target.build_configurations.each do |bc|
+                  bc.base_configuration_reference.real_path.basename.to_s.should == "WatermelonLib.unit-tests.#{bc.name.downcase}.xcconfig"
+                  bc.build_settings['PRODUCT_NAME'].should == 'WatermelonLib-Unit-Tests'
+                  bc.build_settings['MACH_O_TYPE'].should.be.nil
+                  bc.build_settings['PRODUCT_MODULE_NAME'].should.be.nil
+                  bc.build_settings['CODE_SIGNING_REQUIRED'].should == 'YES'
+                  bc.build_settings['CODE_SIGNING_ALLOWED'].should == 'YES'
+                  bc.build_settings['CODE_SIGN_IDENTITY'].should == 'iPhone Developer'
+                  bc.build_settings['INFOPLIST_FILE'].should == 'Target Support Files/WatermelonLib/WatermelonLib-Unit-Tests-Info.plist'
+                  bc.build_settings['GCC_PREFIX_HEADER'].should == 'Target Support Files/WatermelonLib/WatermelonLib-Unit-Tests-prefix.pch'
+                end
+                unit_test_native_target.symbol_type.should == :unit_test_bundle
+                unit_test_native_target.source_build_phase.files.map(&:display_name).should == [
+                  'WatermelonTests.m',
+                  'WatermelonSwiftTests.swift',
+                ]
+
+                ui_test_native_target = @project.targets[2]
+                ui_test_native_target.name.should == 'WatermelonLib-UI-UITests'
+                ui_test_native_target.product_reference.name.should == 'WatermelonLib-UI-UITests'
+                ui_test_native_target.product_reference.path.should == 'WatermelonLib-UI-UITests.xctest'
+                ui_test_native_target.build_configurations.each do |bc|
+                  bc.base_configuration_reference.real_path.basename.to_s.should == "WatermelonLib.ui-uitests.#{bc.name.downcase}.xcconfig"
+                  bc.build_settings['PRODUCT_NAME'].should == 'WatermelonLib-UI-UITests'
+                  bc.build_settings['MACH_O_TYPE'].should.be.nil
+                  bc.build_settings['PRODUCT_MODULE_NAME'].should.be.nil
+                  bc.build_settings['CODE_SIGNING_REQUIRED'].should == 'YES'
+                  bc.build_settings['CODE_SIGNING_ALLOWED'].should == 'YES'
+                  bc.build_settings['CODE_SIGN_IDENTITY'].should == 'iPhone Developer'
+                  bc.build_settings['INFOPLIST_FILE'].should == 'Target Support Files/WatermelonLib/WatermelonLib-UI-UITests-Info.plist'
+                  bc.build_settings['GCC_PREFIX_HEADER'].should == 'Target Support Files/WatermelonLib/WatermelonLib-UI-UITests-prefix.pch'
+                end
+                ui_test_native_target.symbol_type.should == :ui_test_bundle
+                ui_test_native_target.source_build_phase.files.map(&:display_name).should == [
+                  'WatermelonUITests.m',
+                ]
+                snapshot_test_native_target = @project.targets[3]
+                snapshot_test_native_target.name.should == 'WatermelonLib-Unit-SnapshotTests'
+                snapshot_test_native_target.product_reference.name.should == 'WatermelonLib-Unit-SnapshotTests'
+                snapshot_test_native_target.product_reference.path.should == 'WatermelonLib-Unit-SnapshotTests.xctest'
+                snapshot_test_native_target.build_configurations.each do |bc|
+                  bc.base_configuration_reference.real_path.basename.to_s.should == "WatermelonLib.unit-snapshottests.#{bc.name.downcase}.xcconfig"
+                  bc.build_settings['PRODUCT_NAME'].should == 'WatermelonLib-Unit-SnapshotTests'
+                  bc.build_settings['MACH_O_TYPE'].should.be.nil
+                  bc.build_settings['PRODUCT_MODULE_NAME'].should.be.nil
+                  bc.build_settings['CODE_SIGNING_REQUIRED'].should == 'YES'
+                  bc.build_settings['CODE_SIGNING_ALLOWED'].should == 'YES'
+                  bc.build_settings['CODE_SIGN_IDENTITY'].should == 'iPhone Developer'
+                  bc.build_settings['INFOPLIST_FILE'].should == 'Target Support Files/WatermelonLib/WatermelonLib-Unit-SnapshotTests-Info.plist'
+                  bc.build_settings['GCC_PREFIX_HEADER'].should == 'Target Support Files/WatermelonLib/WatermelonLib-Unit-SnapshotTests-prefix.pch'
+                end
+                snapshot_test_native_target.symbol_type.should == :unit_test_bundle
+                app_native_target = @project.targets[7]
+                app_native_target.name.should == 'WatermelonLib-App'
+                app_native_target.product_reference.name.should == 'WatermelonLib-App'
+                app_native_target.product_reference.path.should == 'WatermelonLib-App.app'
+                app_native_target.build_configurations.each do |bc|
+                  bc.base_configuration_reference.real_path.basename.to_s.should == "WatermelonLib.app.#{bc.name.downcase}.xcconfig"
+                  bc.build_settings['PRODUCT_NAME'].should == 'WatermelonLib-App'
+                  bc.build_settings['PRODUCT_BUNDLE_IDENTIFIER'].should == 'org.cocoapods.${PRODUCT_NAME:rfc1034identifier}'
+                  bc.build_settings['CURRENT_PROJECT_VERSION'].should == '1'
+                  bc.build_settings['MACH_O_TYPE'].should.be.nil
+                  bc.build_settings['PRODUCT_MODULE_NAME'].should.be.nil
+                  bc.build_settings['CODE_SIGNING_REQUIRED'].should == 'YES'
+                  bc.build_settings['CODE_SIGNING_ALLOWED'].should == 'YES'
+                  bc.build_settings['CODE_SIGN_IDENTITY'].should == 'iPhone Developer'
+                  bc.build_settings['CODE_SIGN_IDENTITY[sdk=appletvos*]'].should.be.nil
+                  bc.build_settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'].should.be.nil
+                  bc.build_settings['CODE_SIGN_IDENTITY[sdk=watchos*]'].should.be.nil
+                  bc.build_settings['INFOPLIST_FILE'].should == 'App/WatermelonLib-App-Info.plist'
+                  bc.build_settings['GCC_PREFIX_HEADER'].should == 'Target Support Files/WatermelonLib/WatermelonLib-App-prefix.pch'
+                end
+                app_native_target.symbol_type.should == :application
+                app_native_target.source_build_phase.files.map(&:display_name).should == [
+                  'main.swift',
+                ]
+                installation_result.test_native_targets.count.should == 3
+                installation_result.app_native_targets.count.should == 1
+              end
             end
 
             describe 'test other files under sources' do
@@ -741,11 +832,15 @@ module Pod
               @installer.install!
               resources = @project.targets.first.resources_build_phase.files
               resources.count.should > 0
-              resource = resources.find { |res| res.file_ref.path.include?('logo-sidebar.png') }
+              resource = resources.find { |res| res.file_ref.name == 'logo-sidebar.png' }
               resource.should.be.not.nil
+              resource.file_ref.class.should == Xcodeproj::Project::Object::PBXFileReference
+              resource.file_ref.path.should == 'Resources/logo-sidebar.png'
 
-              resource = resources.find { |res| res.file_ref.path.include?('en.lproj') }
+              resource = resources.find { |res| res.file_ref.name == 'Main.storyboard' }
               resource.should.be.not.nil
+              resource.file_ref.class.should == Xcodeproj::Project::Object::PBXVariantGroup
+              resource.file_ref.children.map(&:path).sort.should == %w[Base.lproj/Main.storyboard en.lproj/Main.strings]
             end
 
             it 'adds compilable framework resources to the static framework target' do
@@ -753,8 +848,14 @@ module Pod
               @installer.install!
               resources = @project.targets.first.resources_build_phase.files
               resources.count.should > 0
-              resource = resources.find { |res| res.file_ref.path.include?('Migration.xcmappingmodel') }
+              resource = resources.find { |res| res.file_ref.name == 'Migration.xcmappingmodel' }
               resource.should.be.not.nil
+              resource.file_ref.class.should == Xcodeproj::Project::Object::PBXFileReference
+              resource.file_ref.path.should == 'Resources/Migration.xcmappingmodel'
+              resource = resources.find { |res| res.file_ref.name == 'Main.storyboard' }
+              resource.should.be.not.nil
+              resource.file_ref.class.should == Xcodeproj::Project::Object::PBXVariantGroup
+              resource.file_ref.children.map(&:path).sort.should == %w[Base.lproj/Main.storyboard en.lproj/Main.strings]
             end
 
             it 'doesn\'t add non-compilable framework resources to the static framework target' do
@@ -914,6 +1015,19 @@ module Pod
                   'BananaLib-Pods-SampleProject-prefix.pch',
                   'BananaLib-Pods-SampleProject.debug.xcconfig',
                   'BananaLib-Pods-SampleProject.modulemap',
+                  'BananaLib-Pods-SampleProject.release.xcconfig',
+                ]
+              end
+
+              it 'verifies disabling module map generation' do
+                @pod_target.stubs(:defines_module?).returns(true)
+                @pod_target.specs.first.stubs(:module_map).returns(false)
+                @installer.install!
+                group = @project['Pods/BananaLib/Support Files']
+                group.children.map(&:display_name).sort.should == [
+                  'BananaLib-Pods-SampleProject-dummy.m',
+                  'BananaLib-Pods-SampleProject-prefix.pch',
+                  'BananaLib-Pods-SampleProject.debug.xcconfig',
                   'BananaLib-Pods-SampleProject.release.xcconfig',
                 ]
               end
@@ -1237,6 +1351,26 @@ module Pod
                 FileUtils.expects(:ln_sf).with(relative_path, target_module_path)
                 native_target = mock(:build_configurations => [])
                 @installer.send(:create_module_map, native_target)
+              end
+            end
+
+            #--------------------------------------------------------------------------------#
+
+            describe '#bcsymbolmap_paths' do
+              it 'de dups bcsymbol map paths that are found across multiple frameworks' do
+                framework_a = Pod::Xcode::FrameworkPaths.new('/path/to/A.framework', '/path/to/A.framework.dSYM', [
+                  '${PODS_ROOT}/path/to/A9FE499F-68E9-3984-A291-CFB68F9C77EB.bcsymbolmap',
+                  '${PODS_ROOT}/path/to/48874290-E5EB-391C-A715-28CBA7F8B4B8.bcsymbolmap',
+                ])
+                framework_b = Pod::Xcode::FrameworkPaths.new('/path/to/B.framework', '/path/to/B.framework.dSYM', [
+                  '${PODS_ROOT}/path/to/A9FE499F-68E9-3984-A291-CFB68F9C77EB.bcsymbolmap',
+                  '${PODS_ROOT}/path/to/48874290-E5EB-391C-A715-28CBA7F8B4B8.bcsymbolmap',
+                ])
+                @pod_target.stubs(:framework_paths).returns('Spec' => [framework_a, framework_b])
+                Pod::Installer::Xcode::PodsProjectGenerator::PodTargetInstaller.bcsymbolmap_paths(@pod_target).should == [
+                  '${PODS_ROOT}/path/to/A9FE499F-68E9-3984-A291-CFB68F9C77EB.bcsymbolmap',
+                  '${PODS_ROOT}/path/to/48874290-E5EB-391C-A715-28CBA7F8B4B8.bcsymbolmap',
+                ]
               end
             end
 
@@ -1642,6 +1776,22 @@ module Pod
                 end
                 core_data_sources_file.should.be.not.nil
               end
+
+              it 'adds RealityComposer projects to the compile sources phase (non-bundles only)' do
+                native_target = @project.targets.first
+
+                # The project should not be in the resources phase.
+                reality_composer_resources_file = native_target.resources_build_phase.files.find do |bf|
+                  bf.file_ref.path == 'Resources/Sample.rcproject'
+                end
+                reality_composer_resources_file.should.be.nil
+
+                # The project should not be in the resources phase.
+                reality_composer_sources_file = native_target.source_build_phase.files.find do |bf|
+                  bf.file_ref.path == 'Resources/Sample.rcproject'
+                end
+                reality_composer_sources_file.should.be.not.nil
+              end
             end
 
             describe 'concerning resource bundles' do
@@ -1714,14 +1864,14 @@ module Pod
 
             describe 'xcframeworks' do
               it 'raises if a vendored xcframework has slices of mixed linkage' do
-                @pod_target.stubs(:xcframeworks).returns('Debug' => [Pod::Xcode::XCFramework.new(fixture('CoconutLib.xcframework'))])
+                @pod_target.stubs(:xcframeworks).returns('Debug' => [Pod::Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework'))])
                 Pod::Xcode::LinkageAnalyzer.stubs(:dynamic_binary?).returns(true, false, true, false, true, false, true)
                 e = ->() { @installer.install! }.should.raise Informative
                 e.message.should.include? 'Unable to install vendored xcframework `CoconutLib` for Pod `BananaLib`, because it contains both static and dynamic frameworks.'
               end
 
               it 'raises if a vendored xcframework is empty' do
-                xcframework = Pod::Xcode::XCFramework.new(fixture('CoconutLib.xcframework'))
+                xcframework = Pod::Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework'))
                 xcframework.stubs(:slices).returns([])
                 @pod_target.stubs(:xcframeworks).returns('Debug' => [xcframework])
                 e = ->() { @installer.install! }.should.raise Informative
@@ -1753,7 +1903,7 @@ module Pod
               end
 
               it 'creates the copy xcframeworks script phase if needed' do
-                @pod_target.stubs(:xcframeworks).returns('Debug' => [Pod::Xcode::XCFramework.new(fixture('CoconutLib.xcframework'))])
+                @pod_target.stubs(:xcframeworks).returns('Debug' => [Pod::Xcode::XCFramework.new('CoconutLib', fixture('CoconutLib.xcframework'))])
                 @installer.expects(:create_copy_xcframeworks_script).once
                 @installer.install!
               end

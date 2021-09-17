@@ -34,6 +34,7 @@ module Pod
               target_installation_result.non_library_specs_by_native_target.each do |native_target, spec|
                 add_embed_frameworks_script_phase(native_target, spec)
                 add_copy_resources_script_phase(native_target, spec)
+                add_on_demand_resources(native_target, spec) if spec.app_specification?
                 UserProjectIntegrator::TargetIntegrator.create_or_update_user_script_phases(script_phases_for_specs(spec), native_target)
               end
               add_copy_dsyms_script_phase(target_installation_result.native_target)
@@ -134,20 +135,26 @@ module Pod
               spec_paths_to_include << spec.name if dependent_target == target
               dependent_target.framework_paths.values_at(*spec_paths_to_include).flatten.compact
             end.uniq
+            xcframework_paths = dependent_targets.flat_map do |dependent_target|
+              spec_paths_to_include = dependent_target.library_specs.map(&:name)
+              spec_paths_to_include -= host_target_spec_names
+              spec_paths_to_include << spec.name if dependent_target == target
+              dependent_target.xcframeworks.values_at(*spec_paths_to_include).flatten.compact
+            end.uniq
 
-            if use_input_output_paths? && !framework_paths.empty?
+            if use_input_output_paths? && !framework_paths.empty? || !xcframework_paths.empty?
               input_file_list_path = target.embed_frameworks_script_input_files_path_for_spec(spec)
               input_file_list_relative_path = "${PODS_ROOT}/#{input_file_list_path.relative_path_from(target.sandbox.root)}"
               input_paths_key = UserProjectIntegrator::TargetIntegrator::XCFileListConfigKey.new(input_file_list_path, input_file_list_relative_path)
-              input_paths_by_config[input_paths_key] = [script_path] + UserProjectIntegrator::TargetIntegrator.embed_frameworks_input_paths(framework_paths, [])
+              input_paths_by_config[input_paths_key] = [script_path] + UserProjectIntegrator::TargetIntegrator.embed_frameworks_input_paths(framework_paths, xcframework_paths)
 
               output_file_list_path = target.embed_frameworks_script_output_files_path_for_spec(spec)
               output_file_list_relative_path = "${PODS_ROOT}/#{output_file_list_path.relative_path_from(target.sandbox.root)}"
               output_paths_key = UserProjectIntegrator::TargetIntegrator::XCFileListConfigKey.new(output_file_list_path, output_file_list_relative_path)
-              output_paths_by_config[output_paths_key] = UserProjectIntegrator::TargetIntegrator.embed_frameworks_output_paths(framework_paths, [])
+              output_paths_by_config[output_paths_key] = UserProjectIntegrator::TargetIntegrator.embed_frameworks_output_paths(framework_paths, xcframework_paths)
             end
 
-            if framework_paths.empty?
+            if framework_paths.empty? && xcframework_paths.empty?
               UserProjectIntegrator::TargetIntegrator.remove_embed_frameworks_script_phase_from_target(native_target)
             else
               UserProjectIntegrator::TargetIntegrator.create_or_update_embed_frameworks_script_phase_to_target(
@@ -183,7 +190,7 @@ module Pod
               output_file_list_relative_path = "${PODS_ROOT}/#{output_file_list_path.relative_path_from(target.sandbox.root)}"
               output_paths_key = UserProjectIntegrator::TargetIntegrator::XCFileListConfigKey.new(output_file_list_path, output_file_list_relative_path)
               output_paths_by_config[output_paths_key] = xcframeworks.map do |xcf|
-                "#{Target::BuildSettings::XCFRAMEWORKS_BUILD_DIR_VARIABLE}/#{xcf.name}"
+                "#{Target::BuildSettings::XCFRAMEWORKS_BUILD_DIR_VARIABLE}/#{xcf.target_name}/#{xcf.name}.framework"
               end
             end
 
@@ -199,7 +206,7 @@ module Pod
           # vendored dSYMs.
           #
           # @param [PBXNativeTarget] native_target
-          #         the native target for which to add the the copy dSYM files build phase.
+          #         the native target for which to add the copy dSYM files build phase.
           #
           # @return [void]
           #
@@ -240,6 +247,41 @@ module Pod
             end
 
             UserProjectIntegrator::TargetIntegrator.set_input_output_paths(phase, input_paths_by_config, output_paths_by_config)
+          end
+
+          # Adds the ODRs that are related to this app spec. This includes the app spec dependencies as well as the ODRs
+          # coming from the app spec itself.
+          #
+          # @param [Xcodeproj::PBXNativeTarget] native_target
+          #         the native target for which to add the ODR file references into.
+          #
+          # @param [Specification] app_spec
+          #         the app spec to integrate ODRs for.
+          #
+          # @return [void]
+          #
+          def add_on_demand_resources(native_target, app_spec)
+            dependent_targets = target.dependent_targets_for_app_spec(app_spec)
+            parent_odr_group = native_target.project.group_for_spec(app_spec.name)
+
+            # Add ODRs of the app spec dependencies first.
+            dependent_targets.each do |pod_target|
+              file_accessors = pod_target.file_accessors.select do |fa|
+                fa.spec.library_specification? ||
+                  fa.spec.test_specification? && pod_target.test_app_hosts_by_spec[fa.spec]&.first == app_spec
+              end
+              target_odr_group_name = "#{pod_target.label}-OnDemandResources"
+              UserProjectIntegrator::TargetIntegrator.update_on_demand_resources(target.sandbox, native_target.project,
+                                                                                 native_target, file_accessors,
+                                                                                 parent_odr_group, target_odr_group_name)
+            end
+
+            # Now add the ODRs of our own app spec declaration.
+            file_accessor = target.file_accessors.find { |fa| fa.spec == app_spec }
+            target_odr_group_name = "#{target.subspec_label(app_spec)}-OnDemandResources"
+            UserProjectIntegrator::TargetIntegrator.update_on_demand_resources(target.sandbox, native_target.project,
+                                                                               native_target, file_accessor,
+                                                                               parent_odr_group, target_odr_group_name)
           end
 
           # @return [String] the message that should be displayed for the target

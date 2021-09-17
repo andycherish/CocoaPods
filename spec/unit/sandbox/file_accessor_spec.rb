@@ -94,8 +94,9 @@ module Pod
         ]
       end
 
-      it 'filters the private headers from the public headers' do
+      it 'filters the private and project headers from the public headers' do
         @spec_consumer.stubs(:public_header_files).returns([])
+        @spec_consumer.stubs(:project_header_files).returns(['**/*Project*'])
         @spec_consumer.stubs(:private_header_files).returns(['**/*Private*'])
         @accessor.public_headers.sort.should == [
           @root + 'Classes/Banana.h',
@@ -115,11 +116,14 @@ module Pod
       it 'returns the resources' do
         @accessor.resources.sort.should == [
           @root + 'Resources/Base.lproj',
+          @root + 'Resources/Base.lproj/Main.storyboard',
           @root + 'Resources/Images.xcassets',
           @root + 'Resources/Migration.xcmappingmodel',
+          @root + 'Resources/Sample.rcproject',
           @root + 'Resources/Sample.xcdatamodeld',
           @root + 'Resources/de.lproj',
           @root + 'Resources/en.lproj',
+          @root + 'Resources/en.lproj/Main.strings',
           @root + 'Resources/logo-sidebar.png',
           @root + 'Resources/sub_dir',
         ]
@@ -169,6 +173,7 @@ module Pod
           @root + 'Resources/en.lproj',
           @root + 'Resources/Images.xcassets',
           @root + 'Resources/Migration.xcmappingmodel',
+          @root + 'Resources/Sample.rcproject',
           @root + 'Resources/Sample.xcdatamodeld',
           @root + 'Resources/sub_dir',
         ]
@@ -184,10 +189,50 @@ module Pod
           @root + 'Resources/en.lproj',
           @root + 'Resources/Images.xcassets',
           @root + 'Resources/Migration.xcmappingmodel',
+          @root + 'Resources/Sample.rcproject',
           @root + 'Resources/Sample.xcdatamodeld',
           @root + 'Resources/sub_dir',
         ]
         @accessor.resource_bundle_files.should == resource_paths
+      end
+
+      it 'returns the expanded paths of the files of the on demand resources' do
+        on_demand_resources = { 'OnDemandResources' => { :paths => ['Resources/*'], :category => :download_on_demand } }
+        @spec_consumer.stubs(:on_demand_resources).returns(on_demand_resources)
+        expected_on_demand_resources = {
+          'OnDemandResources' => {
+            :paths => [
+              @root + 'Resources/logo-sidebar.png',
+              @root + 'Resources/Base.lproj',
+              @root + 'Resources/de.lproj',
+              @root + 'Resources/en.lproj',
+              @root + 'Resources/Images.xcassets',
+              @root + 'Resources/Migration.xcmappingmodel',
+              @root + 'Resources/Sample.rcproject',
+              @root + 'Resources/Sample.xcdatamodeld',
+              @root + 'Resources/sub_dir',
+            ],
+            :category => :download_on_demand,
+          },
+        }
+        @accessor.on_demand_resources.should == expected_on_demand_resources
+      end
+
+      it 'returns all the expanded paths of the files of the on demand resources' do
+        on_demand_resources = { 'OnDemandResources' => { :paths => ['Resources/*'], :category => :download_on_demand } }
+        @spec_consumer.stubs(:on_demand_resources).returns(on_demand_resources)
+        expected_on_demand_resources = [
+          @root + 'Resources/logo-sidebar.png',
+          @root + 'Resources/Base.lproj',
+          @root + 'Resources/de.lproj',
+          @root + 'Resources/en.lproj',
+          @root + 'Resources/Images.xcassets',
+          @root + 'Resources/Migration.xcmappingmodel',
+          @root + 'Resources/Sample.rcproject',
+          @root + 'Resources/Sample.xcdatamodeld',
+          @root + 'Resources/sub_dir',
+        ]
+        @accessor.on_demand_resources_files.should == expected_on_demand_resources
       end
 
       it 'takes into account exclude_files when creating the resource bundles of the pod' do
@@ -199,6 +244,7 @@ module Pod
           @root + 'Resources/en.lproj',
           @root + 'Resources/Images.xcassets',
           @root + 'Resources/Migration.xcmappingmodel',
+          @root + 'Resources/Sample.rcproject',
           @root + 'Resources/Sample.xcdatamodeld',
           @root + 'Resources/sub_dir',
         ]
