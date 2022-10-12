@@ -4,6 +4,39 @@ To install or update CocoaPods see this [guide](https://guides.cocoapods.org/usi
 
 To install release candidates run `[sudo] gem install cocoapods --pre`
 
+## 1.11.3 (2022-03-16)
+
+##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
+* Fix script breaking when attempting to print a warning.  
+  [Igor Makarov](https://github.com/igor-makarov)
+  [#11251](https://github.com/CocoaPods/CocoaPods/issues/11251)
+
+* Do not consider podspec_repo when analying sandbox for changes.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10985](https://github.com/CocoaPods/CocoaPods/pull/10985)
+
+* Rewrite XCFramework slice selection using plist metadata.  
+  [Igor Makarov](https://github.com/igor-makarov)
+  [#11229](https://github.com/CocoaPods/CocoaPods/pull/11229)
+
+* Fix setting `LD_RUNTIME_SEARCH_PATHS` for aggregate targets that include dynamic xcframeworks.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#11158](https://github.com/CocoaPods/CocoaPods/pull/11158)
+
+* Add catch for YAML syntax error to prevent crash in `cdn_url?` check.  
+  [Kanstantsin Shautsou](https://github.com/KostyaSha)
+  [#11010](https://github.com/CocoaPods/CocoaPods/issues/11010)
+
+* Fix static Swift XCFramework import paths.  
+  [Igor Makarov](https://github.com/igor-makarov)
+  [#11058](https://github.com/CocoaPods/CocoaPods/issues/10058)
+  [#11093](https://github.com/CocoaPods/CocoaPods/pull/11093)
+
 ## 1.11.2 (2021-09-13)
 
 ##### Enhancements
@@ -18,6 +51,7 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
 
 
 ## 1.11.1 (2021-09-13)
+## 1.11.1 (2021-09-12)
 
 ##### Enhancements
 
@@ -50,6 +84,22 @@ To install release candidates run `[sudo] gem install cocoapods --pre`
 
 
 ## 1.11.0.rc.1 (2021-08-25)
+
+##### Enhancements
+
+* None.  
+
+##### Bug Fixes
+
+* Correctly process multiple `xcframeworks` a pod provides.  
+  [Dimitris Koutsogiorgas](https://github.com/dnkoutso)
+  [#10378](https://github.com/CocoaPods/CocoaPods/issues/10378)
+
+
+## 1.11.0.beta.2 (2021-08-11)
+
+##### Enhancements
+
 
 ##### Enhancements
 
